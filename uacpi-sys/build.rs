@@ -53,7 +53,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if cc.get_compiler().is_like_msvc() {
         //compile_error!("uACPI does not support MSVC");
-        cc.compiler("clang");
     }
 
     cc.files(sources)
