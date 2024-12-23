@@ -6,25 +6,25 @@ use std::{
 use std::process::Command;
 
 const SOURCES: &[&str] = &[
+    "source/default_handlers.c",
+    "source/event.c",
+    "source/interpreter.c",
+    "source/io.c",
+    "source/mutex.c",
+    "source/namespace.c",
+    "source/notify.c",
+    "source/opcodes.c",
+    "source/opregion.c",
+    "source/osi.c",
+    "source/registers.c",
+    "source/resources.c",
+    "source/shareable.c",
+    "source/sleep.c",
+    "source/stdlib.c",
     "source/tables.c",
     "source/types.c",
     "source/uacpi.c",
     "source/utilities.c",
-    "source/interpreter.c",
-    "source/opcodes.c",
-    "source/namespace.c",
-    "source/stdlib.c",
-    "source/shareable.c",
-    "source/opregion.c",
-    "source/default_handlers.c",
-    "source/io.c",
-    "source/notify.c",
-    "source/sleep.c",
-    "source/registers.c",
-    "source/resources.c",
-    "source/event.c",
-    "source/mutex.c",
-    "source/osi.c"
 ];
 
 fn init_submodule(uacpi_path: &Path) {
@@ -39,7 +39,7 @@ fn init_submodule(uacpi_path: &Path) {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let project_dir = env::var_os("CARGO_MANIFEST_DIR").unwrap();
-    let uacpi_path = Path::new(&project_dir).join("vendor");
+    let uacpi_path = Path::new(&project_dir).join("uacpi-src");
 
     init_submodule(&uacpi_path);
 
@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .header("wrapper.h")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .clang_args(&[
-            "-Ivendor/include",
+            "-Iuacpi-src/include",
             "-DUACPI_SIZED_FREES=1",
             #[cfg(feature = "reduced-hardware")]
             "-DUACPI_REDUCED_HARDWARE=1",
