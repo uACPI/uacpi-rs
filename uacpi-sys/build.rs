@@ -24,7 +24,7 @@ const SOURCES: &[&str] = &[
     "source/tables.c",
     "source/types.c",
     "source/uacpi.c",
-    "source/utilities.c",
+    "source/utilities.c"
 ];
 
 fn init_submodule(uacpi_path: &Path) {
@@ -51,20 +51,36 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut cc = cc::Build::new();
 
+    if cc.get_compiler().is_like_msvc() {
+        //compile_error!("uACPI does not support MSVC");
+        cc.compiler("clang");
+    }
+
     cc.files(sources)
         .include(format!("{uacpi_path_str}/include"))
-        .define("UACPI_SIZED_FREES", "1")
-        .flag("-fno-stack-protector")
+        .define("UACPI_SIZED_FREES", "1");
+
+    if !cc.get_compiler().is_like_msvc() {
+        cc.flag("-fno-stack-protector")
         .flag("-mgeneral-regs-only")
         .flag("-nostdlib")
         .flag("-ffreestanding");
 
-    if cfg!(target_arch = "x86_64") || cfg!(target_arch = "x86") {
-        cc.flag("-mno-red-zone");
+        if cfg!(target_arch = "x86_64") || cfg!(target_arch = "x86") {
+            cc.flag("-mno-red-zone");
+        }
+
     }
 
     if cfg!(feature = "reduced-hardware") {
         cc.define("UACPI_REDUCED_HARDWARE", "1");
+    }
+
+    if cc.get_compiler().is_like_msvc() {
+        cc.flag("/kernel")
+        .flag("/GS-")
+        .flag("/link")
+        .flag("/NODEFAULTLIB");
     }
 
     cc.compile("uacpi");
