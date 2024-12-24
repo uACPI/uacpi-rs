@@ -51,35 +51,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut cc = cc::Build::new();
 
-    if cc.get_compiler().is_like_msvc() {
-        //compile_error!("uACPI does not support MSVC");
+    if cc.get_compiler().is_like_msvc() && env::var("CC").is_err() {
+        panic!("uacpi-rs doesnt support MSVC, please set the user environmental variable \"CC\" to the path to clang.exe");
     }
+
 
     cc.files(sources)
         .include(format!("{uacpi_path_str}/include"))
-        .define("UACPI_SIZED_FREES", "1");
-
-    if !cc.get_compiler().is_like_msvc() {
-        cc.flag("-fno-stack-protector")
+        .define("UACPI_SIZED_FREES", "1")
+        .no_default_flags(true)
+        .remove_flag("-Wall")
+        .remove_flag("-Wextra")
+        .flag("-fno-stack-protector")
         .flag("-mgeneral-regs-only")
         .flag("-nostdlib")
         .flag("-ffreestanding");
 
-        if cfg!(target_arch = "x86_64") || cfg!(target_arch = "x86") {
-            cc.flag("-mno-red-zone");
-        }
-
+    if cfg!(target_arch = "x86_64") || cfg!(target_arch = "x86") {
+        cc.flag("-mno-red-zone");
     }
+
 
     if cfg!(feature = "reduced-hardware") {
         cc.define("UACPI_REDUCED_HARDWARE", "1");
-    }
-
-    if cc.get_compiler().is_like_msvc() {
-        cc.flag("/kernel")
-        .flag("/GS-")
-        .flag("/link")
-        .flag("/NODEFAULTLIB");
     }
 
     cc.compile("uacpi");
