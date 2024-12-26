@@ -55,13 +55,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         panic!("uacpi-rs doesnt support MSVC, please set the user environmental variable \"CC\" to the path to clang.exe");
     }
 
-
     cc.files(sources)
         .include(format!("{uacpi_path_str}/include"))
         .define("UACPI_SIZED_FREES", "1")
-        .no_default_flags(true)
-        .remove_flag("-Wall")
-        .remove_flag("-Wextra")
         .flag("-fno-stack-protector")
         .flag("-mgeneral-regs-only")
         .flag("-nostdlib")
