@@ -1,357 +1,286 @@
-use core::ffi::CStr;
-use core::fmt::Debug;
-use core::slice;
 
-#[repr(transparent)]
+use core::{alloc::{AllocError, GlobalAlloc}, ffi::{c_char, c_void, CStr}, mem::{transmute, MaybeUninit}};
+
+use alloc::boxed::Box;
+
+use crate::status::Status;
+
+
+
+#[repr(i32)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LogLevel(pub(crate) uacpi_sys::uacpi_log_level);
-
-impl LogLevel {
-    pub const DEBUG: LogLevel = LogLevel(uacpi_sys::UACPI_LOG_DEBUG);
-    pub const TRACE: LogLevel = LogLevel(uacpi_sys::UACPI_LOG_TRACE);
-    pub const INFO: LogLevel = LogLevel(uacpi_sys::UACPI_LOG_INFO);
-    pub const WARN: LogLevel = LogLevel(uacpi_sys::UACPI_LOG_WARN);
-    pub const ERROR: LogLevel = LogLevel(uacpi_sys::UACPI_LOG_ERROR);
+enum InitLevel {
+    Early = uacpi_sys::UACPI_INIT_LEVEL_EARLY,
+    SubsystemInitialized = uacpi_sys::UACPI_INIT_LEVEL_SUBSYSTEM_INITIALIZED,
+    NamespaceLoaded = uacpi_sys::UACPI_INIT_LEVEL_NAMESPACE_LOADED,
+    NamespaceInitialized = uacpi_sys::UACPI_INIT_LEVEL_NAMESPACE_INITIALIZED
 }
 
-#[repr(transparent)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub struct Handle(pub(crate) uacpi_sys::uacpi_handle);
-
-impl Handle {
-    /// Creates a new opaque kernel handle. Using 0 here is not allowed.
-    pub fn new(handle: u64) -> Handle {
-        assert_ne!(
-            handle,
-            0,
-            "using 0 for success is not allowed, if you want an invalid handle use invalid() instead");
-        Handle(handle as _)
-    }
-
-    /// Creates a new invalid kernel handle.
-    pub fn invalid() -> Handle {
-        Handle(0 as _)
-    }
-
-    pub fn as_u64(self) -> u64 {
-        self.0 as _
-    }
+#[repr(i32)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum LogLevel{
+    Debug = uacpi_sys::UACPI_LOG_DEBUG,
+    Trace = uacpi_sys::UACPI_LOG_TRACE,
+    Info = uacpi_sys::UACPI_LOG_INFO,
+    Warn = uacpi_sys::UACPI_LOG_WARN,
+    Error = uacpi_sys::UACPI_LOG_ERROR,
 }
 
-impl Debug for Handle {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:#x}", self.as_u64())
-    }
-}
+#[cfg(target_pointer_width = "64")]
+pub type PhysAddr = u64;
 
-#[repr(transparent)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub struct PhysAddr(pub(crate) uacpi_sys::uacpi_phys_addr);
+#[cfg(target_pointer_width = "64")]
+pub type IOAddr = u64;
 
-impl PhysAddr {
-    pub fn new(phys_addr: u64) -> PhysAddr {
-        PhysAddr(phys_addr as _)
-    }
-
-    pub fn as_u64(self) -> u64 {
-        self.0
-    }
-}
-
-#[repr(transparent)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct ThreadId(pub(crate) uacpi_sys::uacpi_thread_id);
-
-impl ThreadId {
-    pub fn new(value: *mut core::ffi::c_void) -> Self {
-        Self(value)
-    }
-}
-
-#[repr(transparent)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct CpuFlags(pub(crate) uacpi_sys::uacpi_cpu_flags);
-
-impl CpuFlags {
-    pub fn new(value: core::ffi::c_ulong) -> Self {
-        Self(value)
-    }
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PCIAddress{
+    pub segment: u16,
+    pub bus: u8,
+    pub device: u8,
+    pub function: u8
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum InitLevel {
-    Early = 0,
-    SubsystemInitialized = 1,
-    NamespaceLoaded = 2,
-    NamespaceInitialized = 3,
+struct DataView<T>{
+    ptr: *mut T,
+    size: uacpi_sys::uacpi_size
 }
 
-impl From<uacpi_sys::uacpi_init_level> for InitLevel {
-    fn from(level: uacpi_sys::uacpi_init_level) -> Self {
-        match level {
-            uacpi_sys::UACPI_INIT_LEVEL_EARLY => InitLevel::Early,
-            uacpi_sys::UACPI_INIT_LEVEL_SUBSYSTEM_INITIALIZED => InitLevel::SubsystemInitialized,
-            uacpi_sys::UACPI_INIT_LEVEL_NAMESPACE_LOADED => InitLevel::NamespaceLoaded,
-            uacpi_sys::UACPI_INIT_LEVEL_NAMESPACE_INITIALIZED => InitLevel::NamespaceInitialized,
-            _ => panic!("Unknown uacpi_init_level value: {:#x}", level),
-        }
-    }
+pub struct Handle(pub(crate) uacpi_sys::uacpi_handle);
+
+pub struct NamespaceNode(pub(crate) *mut uacpi_sys::uacpi_namespace_node);
+
+#[repr(i32)]
+pub enum ObjectType {
+    Uninitialized = uacpi_sys::UACPI_OBJECT_UNINITIALIZED,
+    Integer = uacpi_sys::UACPI_OBJECT_INTEGER,
+    String = uacpi_sys::UACPI_OBJECT_STRING,
+    Buffer = uacpi_sys::UACPI_OBJECT_BUFFER,
+    Package = uacpi_sys::UACPI_OBJECT_PACKAGE,
+    FieldUnit = uacpi_sys::UACPI_OBJECT_FIELD_UNIT,
+    Device = uacpi_sys::UACPI_OBJECT_DEVICE,
+    Event = uacpi_sys::UACPI_OBJECT_EVENT,
+    Method = uacpi_sys::UACPI_OBJECT_METHOD,
+    Mutex = uacpi_sys::UACPI_OBJECT_MUTEX,
+    OperationRegion = uacpi_sys::UACPI_OBJECT_OPERATION_REGION,
+    PowerResource = uacpi_sys::UACPI_OBJECT_POWER_RESOURCE,
+    Processor = uacpi_sys::UACPI_OBJECT_PROCESSOR,
+    ThermalZone = uacpi_sys::UACPI_OBJECT_THERMAL_ZONE,
+    BufferField = uacpi_sys::UACPI_OBJECT_BUFFER_FIELD,
+    Debug = uacpi_sys::UACPI_OBJECT_DEBUG,
+
+    Reference = uacpi_sys::UACPI_OBJECT_REFERENCE,
+    BufferIndex = uacpi_sys::UACPI_OBJECT_BUFFER_INDEX,
 }
 
-#[repr(transparent)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub struct IOAddr(pub(crate) uacpi_sys::uacpi_io_addr);
-
-impl IOAddr {
-    pub fn new(phys_addr: u64) -> IOAddr {
-        IOAddr(phys_addr as _)
-    }
-
-    pub fn as_u64(self) -> u64 {
-        self.0
-    }
-}
-
-#[repr(transparent)]
-#[derive(Clone, Copy)]
-pub struct PCIAddress(pub(crate) uacpi_sys::uacpi_pci_address);
-
-impl PCIAddress {
-    pub fn segment(&self) -> u16 {
-        self.0.segment
-    }
-
-    pub fn bus(&self) -> u8 {
-        self.0.bus
-    }
-
-    pub fn device(&self) -> u8 {
-        self.0.device
-    }
-
-    pub fn function(&self) -> u8 {
-        self.0.function
-    }
-}
-
-impl Debug for PCIAddress {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "{:x}:{:x}:{:x}:{:x}",
-            self.segment(),
-            self.bus(),
-            self.device(),
-            self.function()
-        )
-    }
-}
-
-#[must_use]
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Status {
-    Ok = uacpi_sys::UACPI_STATUS_OK,
-    MappingFailed = uacpi_sys::UACPI_STATUS_MAPPING_FAILED,
-    OutOfMemory = uacpi_sys::UACPI_STATUS_OUT_OF_MEMORY,
-    BadChecksum = uacpi_sys::UACPI_STATUS_BAD_CHECKSUM,
-    InvalidSignature = uacpi_sys::UACPI_STATUS_INVALID_SIGNATURE,
-    InvalidTableLenght = uacpi_sys::UACPI_STATUS_INVALID_TABLE_LENGTH,
-    NotFound = uacpi_sys::UACPI_STATUS_NOT_FOUND,
-    InvalidArgument = uacpi_sys::UACPI_STATUS_INVALID_ARGUMENT,
-    Unimplemented = uacpi_sys::UACPI_STATUS_UNIMPLEMENTED,
-    AlreadyExists = uacpi_sys::UACPI_STATUS_ALREADY_EXISTS,
-    InternalError = uacpi_sys::UACPI_STATUS_INTERNAL_ERROR,
-    TypeMismatch = uacpi_sys::UACPI_STATUS_TYPE_MISMATCH,
-    InitLevelMismatch = uacpi_sys::UACPI_STATUS_INIT_LEVEL_MISMATCH,
-    NamespaceNodeDangling = uacpi_sys::UACPI_STATUS_NAMESPACE_NODE_DANGLING,
-    NoHandler = uacpi_sys::UACPI_STATUS_NO_HANDLER,
-    NoResourceEndTag = uacpi_sys::UACPI_STATUS_NO_RESOURCE_END_TAG,
-    CompiledOut = uacpi_sys::UACPI_STATUS_COMPILED_OUT,
-    HardwareTimeout = uacpi_sys::UACPI_STATUS_HARDWARE_TIMEOUT,
-    AmlUndefinedReference = uacpi_sys::UACPI_STATUS_AML_UNDEFINED_REFERENCE,
-    AmlInvalidNamestring = uacpi_sys::UACPI_STATUS_AML_INVALID_NAMESTRING,
-    AmlObjectAlreadyExists = uacpi_sys::UACPI_STATUS_AML_OBJECT_ALREADY_EXISTS,
-    AmlInvalidOpcode = uacpi_sys::UACPI_STATUS_AML_INVALID_OPCODE,
-    AmlIncompatibleObjectType = uacpi_sys::UACPI_STATUS_AML_INCOMPATIBLE_OBJECT_TYPE,
-    AmlBadEncoding = uacpi_sys::UACPI_STATUS_AML_BAD_ENCODING,
-    AmlOutOfBoundsIndex = uacpi_sys::UACPI_STATUS_AML_OUT_OF_BOUNDS_INDEX,
-    AmlSyncLevelTooHigh = uacpi_sys::UACPI_STATUS_AML_SYNC_LEVEL_TOO_HIGH,
-    AmlInvalidResource = uacpi_sys::UACPI_STATUS_AML_INVALID_RESOURCE,
-    AmlLoopTimeout = uacpi_sys::UACPI_STATUS_AML_LOOP_TIMEOUT,
-}
-
-impl From<uacpi_sys::uacpi_status> for Status {
-    fn from(status: uacpi_sys::uacpi_status) -> Self {
-        match status {
-            uacpi_sys::UACPI_STATUS_OK => Status::Ok,
-            uacpi_sys::UACPI_STATUS_MAPPING_FAILED => Status::MappingFailed,
-            uacpi_sys::UACPI_STATUS_OUT_OF_MEMORY => Status::OutOfMemory,
-            uacpi_sys::UACPI_STATUS_BAD_CHECKSUM => Status::BadChecksum,
-            uacpi_sys::UACPI_STATUS_INVALID_SIGNATURE => Status::InvalidSignature,
-            uacpi_sys::UACPI_STATUS_INVALID_TABLE_LENGTH => Status::InvalidTableLenght,
-            uacpi_sys::UACPI_STATUS_NOT_FOUND => Status::NotFound,
-            uacpi_sys::UACPI_STATUS_INVALID_ARGUMENT => Status::InvalidArgument,
-            uacpi_sys::UACPI_STATUS_UNIMPLEMENTED => Status::Unimplemented,
-            uacpi_sys::UACPI_STATUS_ALREADY_EXISTS => Status::AlreadyExists,
-            uacpi_sys::UACPI_STATUS_INTERNAL_ERROR => Status::InternalError,
-            uacpi_sys::UACPI_STATUS_TYPE_MISMATCH => Status::TypeMismatch,
-            uacpi_sys::UACPI_STATUS_INIT_LEVEL_MISMATCH => Status::InitLevelMismatch,
-            uacpi_sys::UACPI_STATUS_NAMESPACE_NODE_DANGLING => {
-                Status::NamespaceNodeDangling
-            }
-            uacpi_sys::UACPI_STATUS_NO_HANDLER => Status::NoHandler,
-            uacpi_sys::UACPI_STATUS_NO_RESOURCE_END_TAG => Status::NoResourceEndTag,
-            uacpi_sys::UACPI_STATUS_COMPILED_OUT => Status::CompiledOut,
-            uacpi_sys::UACPI_STATUS_HARDWARE_TIMEOUT => Status::HardwareTimeout,
-            uacpi_sys::UACPI_STATUS_AML_UNDEFINED_REFERENCE => {
-                Status::AmlUndefinedReference
-            }
-            uacpi_sys::UACPI_STATUS_AML_INVALID_NAMESTRING => {
-                Status::AmlInvalidNamestring
-            }
-            uacpi_sys::UACPI_STATUS_AML_OBJECT_ALREADY_EXISTS => {
-                Status::AmlObjectAlreadyExists
-            }
-            uacpi_sys::UACPI_STATUS_AML_INVALID_OPCODE => Status::AmlInvalidOpcode,
-            uacpi_sys::UACPI_STATUS_AML_INCOMPATIBLE_OBJECT_TYPE => {
-                Status::AmlIncompatibleObjectType
-            }
-            uacpi_sys::UACPI_STATUS_AML_BAD_ENCODING => Status::AmlBadEncoding,
-            uacpi_sys::UACPI_STATUS_AML_OUT_OF_BOUNDS_INDEX => {
-                Status::AmlOutOfBoundsIndex
-            }
-            uacpi_sys::UACPI_STATUS_AML_SYNC_LEVEL_TOO_HIGH => {
-                Status::AmlSyncLevelTooHigh
-            }
-            uacpi_sys::UACPI_STATUS_AML_INVALID_RESOURCE => Status::AmlInvalidResource,
-            uacpi_sys::UACPI_STATUS_AML_LOOP_TIMEOUT => Status::AmlLoopTimeout,
-            _ => panic!("Unknown uacpi_status value: {:#x}", status),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum FirmwareRequest {
-    Breakpoint { context: Handle },
-    Fatal { typ: u8, code: u32, arg: u64 },
-}
-
-impl From<uacpi_sys::uacpi_firmware_request> for FirmwareRequest {
-    fn from(value: uacpi_sys::uacpi_firmware_request) -> Self {
-        match value.type_ as u32 {
-            uacpi_sys::UACPI_FIRMWARE_REQUEST_TYPE_BREAKPOINT => {
-                FirmwareRequest::Breakpoint {
-                    context: Handle(unsafe { value.__bindgen_anon_1.breakpoint.ctx }),
-                }
-            }
-            uacpi_sys::UACPI_FIRMWARE_REQUEST_TYPE_FATAL => {
-                FirmwareRequest::Fatal {
-                    typ: unsafe { value.__bindgen_anon_1.fatal.type_ },
-                    code: unsafe { value.__bindgen_anon_1.fatal.code },
-                    arg: unsafe { value.__bindgen_anon_1.fatal.arg },
-                }
-            }
-            _ => panic!("Unknown uacpi_firmware_request_type: {:#x}", value.type_),
-        }
-    }
-}
-
-#[repr(u32)]
-#[derive(Debug)]
-pub enum WorkType {
-    GPEExecution = uacpi_sys::UACPI_WORK_GPE_EXECUTION,
-    Notification = uacpi_sys::UACPI_WORK_NOTIFICATION,
-}
-
-impl From<uacpi_sys::uacpi_work_type> for WorkType {
-    fn from(value: uacpi_sys::uacpi_work_type) -> Self {
+impl From<i32> for ObjectType {
+    fn from(value: i32) -> Self {
         match value {
-            uacpi_sys::UACPI_WORK_GPE_EXECUTION => Self::GPEExecution,
-            uacpi_sys::UACPI_WORK_NOTIFICATION => Self::Notification,
-            _ => panic!("Unknown uacpi_work_type: {:#x}", value),
+            uacpi_sys::UACPI_OBJECT_UNINITIALIZED => ObjectType::Uninitialized,
+            uacpi_sys::UACPI_OBJECT_INTEGER => ObjectType::Integer,
+            uacpi_sys::UACPI_OBJECT_STRING => ObjectType::String,
+            uacpi_sys::UACPI_OBJECT_BUFFER => ObjectType::Buffer,
+            uacpi_sys::UACPI_OBJECT_PACKAGE => ObjectType::Package,
+            uacpi_sys::UACPI_OBJECT_FIELD_UNIT => ObjectType::FieldUnit,
+            uacpi_sys::UACPI_OBJECT_DEVICE => ObjectType::Device,
+            uacpi_sys::UACPI_OBJECT_EVENT => ObjectType::Event,
+            uacpi_sys::UACPI_OBJECT_METHOD => ObjectType::Method,
+            uacpi_sys::UACPI_OBJECT_MUTEX => ObjectType::Mutex,
+            uacpi_sys::UACPI_OBJECT_OPERATION_REGION => ObjectType::OperationRegion,
+            uacpi_sys::UACPI_OBJECT_POWER_RESOURCE => ObjectType::PowerResource,
+            uacpi_sys::UACPI_OBJECT_PROCESSOR => ObjectType::Processor,
+            uacpi_sys::UACPI_OBJECT_THERMAL_ZONE => ObjectType::ThermalZone,
+            uacpi_sys::UACPI_OBJECT_BUFFER_FIELD => ObjectType::BufferField,
+            uacpi_sys::UACPI_OBJECT_DEBUG => ObjectType::Debug,
+
+            uacpi_sys::UACPI_OBJECT_REFERENCE => ObjectType::Reference,
+            uacpi_sys::UACPI_OBJECT_BUFFER_INDEX => ObjectType::BufferIndex,
+            _ => core::unreachable!()
         }
     }
 }
 
-#[repr(transparent)]
+pub const OBJECT_TYPE_MAX_VALUE: i32 = uacpi_sys::UACPI_OBJECT_MAX_TYPE_VALUE;
+
+#[repr(i32)]
+pub enum ObjectTypeBits{
+    Integer = (1 << ObjectType::Integer as i32),
+    String = (1 << ObjectType::String as i32),
+    Buffer = (1 << ObjectType::Buffer as i32),
+    Package = (1 << ObjectType::Package as i32),
+    FieldUnit = (1 << ObjectType::FieldUnit as i32),
+    Device = (1 << ObjectType::Device as i32),
+    Event = (1 << ObjectType::Event as i32),
+    Method = (1 << ObjectType::Method as i32),
+    Mutex = (1 << ObjectType::Mutex as i32),
+    OperationRegion = (1 << ObjectType::OperationRegion as i32),
+    PowerResource = (1 << ObjectType::PowerResource as i32),
+    Processor = (1 << ObjectType::Processor as i32),
+    ThermalZone = (1 << ObjectType::ThermalZone as i32),
+    BufferField = (1 << ObjectType::BufferField as i32),
+    Debug = (1 << ObjectType::Debug as i32),
+    Reference = (1 << ObjectType::Reference as i32),
+    BufferIndex = (1 << ObjectType::BufferIndex as i32),
+    Any = -1
+}
+
 pub struct Object(pub(crate) *mut uacpi_sys::uacpi_object);
 
 impl Object {
-    fn new(t: uacpi_sys::uacpi_object_type) -> Option<Self> {
-        let ptr = unsafe {
-            uacpi_sys::uacpi_create_object(t)
-        };
-        if !ptr.is_null() {
-            Some(Self(ptr))
-        } else {
-            None
+    
+    pub fn get_type(&self) -> ObjectType {
+        unsafe { uacpi_sys::uacpi_object_get_type(self.0).into() }
+    }
+
+    pub fn is_one_of(&self, type_bits: i32) -> bool {
+        unsafe { uacpi_sys::uacpi_object_is_one_of(self.0, type_bits)}
+    }
+
+    pub fn to_string(&self) -> &str {
+        match self.get_type() {
+            ObjectType::Uninitialized => "Uninitialized",
+            ObjectType::Integer => "Integer",
+            ObjectType::String => "String",
+            ObjectType::Buffer => "Buffer",
+            ObjectType::Package => "Package",
+            ObjectType::FieldUnit => "Field Unit",
+            ObjectType::Device => "Device",
+            ObjectType::Event => "Event",
+            ObjectType::Method => "Method",
+            ObjectType::Mutex => "Mutex",
+            ObjectType::OperationRegion => "Operation Region",
+            ObjectType::PowerResource => "Power Resource",
+            ObjectType::Processor => "Processor",
+            ObjectType::ThermalZone => "Thermal Zone",
+            ObjectType::BufferField => "Buffer Field",
+            ObjectType::Debug => "Debug",
+            ObjectType::Reference => "Reference",
+            ObjectType::BufferIndex => "Buffer Index",
         }
     }
 
-    pub fn new_int(value: u64) -> Option<Self> {
-        unsafe {
-            let s = Self::new(
-                uacpi_sys::UACPI_OBJECT_INTEGER
-            )?;
-            (*s.0).__bindgen_anon_1.integer = value;
-            Some(s)
-        }
-    }
-
-    pub fn get_int(&self) -> Option<u64> {
-        unsafe {
-            if (*self.0).type_ != uacpi_sys::UACPI_OBJECT_INTEGER as u8 {
-                None
-            } else {
-                Some((*self.0).__bindgen_anon_1.integer)
+    pub fn new_uninitialized() -> Self {
+        Self(
+            unsafe {
+                uacpi_sys::uacpi_object_create_uninitialized()
             }
-        }
+        )
     }
 
-    pub fn get_buffer(&self) -> Option<&[u8]> {
-        unsafe {
-            if (*self.0).type_ != uacpi_sys::UACPI_OBJECT_BUFFER as u8 {
-                None
-            } else {
-                let buffer = (*self.0).__bindgen_anon_1.buffer;
-                let slice = slice::from_raw_parts(
-                    (*buffer).__bindgen_anon_1.byte_data,
-                    (*buffer).size
-                );
-                Some(slice)
-            }
-        }
+    pub fn new_integer(value: u64) -> Self {
+        Self::new_integer_safe(value, OverflowBehavior::Allow).expect("uACPI error")
     }
 
-    pub fn get_string(&self) -> Option<&CStr> {
-        unsafe {
-            if (*self.0).type_ != uacpi_sys::UACPI_OBJECT_STRING as u8 {
-                None
-            } else {
-                let buffer = (*self.0).__bindgen_anon_1.buffer;
-                let slice = slice::from_raw_parts(
-                    (*buffer).__bindgen_anon_1.byte_data,
-                    (*buffer).size
-                );
-                Some(CStr::from_bytes_with_nul(slice).unwrap())
-            }
+    pub fn new_integer_safe(value: u64, overflow_behavior: OverflowBehavior) -> Result<Self,()> {
+        let mut ptr: *mut uacpi_sys::uacpi_object = core::ptr::null_mut();
+        let ptr2: *mut *mut uacpi_sys::uacpi_object = &mut ptr;
+        let status: Status = unsafe { uacpi_sys::uacpi_object_create_integer_safe(value, overflow_behavior.into(), ptr2).try_into().expect("uACPI Status Error") };
+
+        match status {
+            Status::OK => Ok(Self(ptr)),
+            Status::InvalidArgument => Err(()),
+            _ => unreachable!()
         }
+
     }
 
-    pub fn get_package(&self) -> Option<impl Iterator<Item=Self>> {
-        unsafe {
-            if (*self.0).type_ != uacpi_sys::UACPI_OBJECT_PACKAGE as u8 {
-                None
-            } else {
-                let pkg = (*self.0).__bindgen_anon_1.package;
-                Some(slice::from_raw_parts(
-                    (*pkg).objects,
-                    (*pkg).count,
-                ).iter().map(|obj| Self(*obj)))
-            }
+    pub fn assign_integer(&self, value: u64) -> Status {
+        unsafe { uacpi_sys::uacpi_object_assign_integer(self.0, value).try_into().expect("uACPI Status Error") }
+    }
+
+    #[allow(unused_mut)]
+    pub fn get_integer(&self) -> Result<u64,Status> {
+        let mut value: u64 = 0;
+        let mut ptr: *mut u64 = &mut value;
+
+        let output = unsafe { uacpi_sys::uacpi_object_get_integer(self.0, ptr).try_into().expect("uACPI Status Error") };
+
+        if output == Status::OK {
+            return Ok(value);
         }
+
+        Err(output)
+    }
+
+    pub fn new_string(value: &[c_char]) -> Self {}
+    pub fn new_cstring(value: &CStr) -> Self {}
+    pub fn new_buffer(value: &[u8]) -> Self {
+        let uacpi_slice = UacpiDataView::<u8>{ ptr: value.as_ptr(), lenth: value.len() };
+        Self(
+            unsafe {
+                uacpi_sys::uacpi_object_create_buffer(transmute(uacpi_slice))
+            }
+        )
+    }
+
+    pub fn get_string(&self) -> Result<&mut[c_char],Status> {}
+    pub fn get_buffer(&self) -> Result<&mut[u8],Status> {}
+
+    pub fn is_aml_namepath(&self) -> bool {
+        unsafe { uacpi_sys::uacpi_object_is_aml_namepath(self.0) }
+    }
+
+    pub fn resolve_as_aml_namepath(&self, scope: &NamespaceNode) -> Result<NamespaceNode,Status> {}
+
+    pub fn assign_string(&self, value: &mut[c_char]) -> Status {}
+    pub fn assign_buffer(&self, value: &mut[u8]) -> Status {
+        let uacpi_slice = UacpiDataView::<u8>{ ptr: value.as_ptr(), lenth: value.len() };
+
+        unsafe { uacpi_sys::uacpi_object_assign_buffer(self.0, transmute(uacpi_slice)).try_into().expect("uACPI Status Error")}
+
+    }
+
+    pub fn create_package<A>(content: Box<Object,A>) -> Self where A : core::alloc::Allocator {}
+
+    pub fn get_package(&self) -> Result<Box<Object>,Result<AllocError, Status>>{}
+    pub fn get_package_allocator<A: core::alloc::Allocator>(&self) -> Result<Box<Object,A>,Result<AllocError, Status>>{}
+
+    pub fn assign_package(&self, content: Box<Object>) -> Status {}
+    pub fn assign_package_allocator<A: core::alloc::Allocator>(&self, content: Box<Object,A>) -> Status {}
+
+    pub fn create_reference(&self) -> Object {}
+
+    pub fn assign_reference(&self, child: &Object) -> Status {}
+
+    pub fn get_referenced_object(&self) ->Result<Object,Status> {}
+
+    #[allow(unused_mut)]
+    pub fn get_processor_info(&self) -> Result<ProcessorInfo,Status> {
+        let mut output = ProcessorInfo{ id: 0, block_address: 0, block_length: 0 };
+        let mut output_ptr: *mut ProcessorInfo = &mut output;
+
+        let output_status: Status = unsafe { uacpi_sys::uacpi_object_get_processor_info(self.0, output_ptr as *mut uacpi_sys::uacpi_processor_info).try_into().expect("uACPI Status Error") };
+        
+        if output_status == Status::OK {
+            return Ok(output);
+        }
+
+        Err(output_status)
+    }
+
+    #[allow(unused_mut)]
+    pub fn get_power_resource_info(&self) -> Result<PowerResourceInfo, Status> {
+        let mut output = PowerResourceInfo{ system_level: 0, resource_order: 0 };
+        let mut output_ptr: *mut PowerResourceInfo = &mut output;
+
+        let output_status: Status = unsafe { uacpi_sys::uacpi_object_get_power_resource_info(self.0, output_ptr as *mut uacpi_sys::uacpi_power_resource_info).try_into().expect("") };
+        
+        if output_status == Status::OK {
+            return Ok(output);
+        }
+
+        Err(output_status)
+    }
+
+}
+
+impl Clone for Object {
+    fn clone(&self) -> Self {
+        unsafe {
+            uacpi_sys::uacpi_object_ref(self.0);
+        }
+        Self(self.0)
     }
 }
 
@@ -361,4 +290,156 @@ impl Drop for Object {
             uacpi_sys::uacpi_object_unref(self.0);
         }
     }
+}
+
+#[repr(i32)]
+pub enum OverflowBehavior{
+    Allow = uacpi_sys::UACPI_OVERFLOW_ALLOW,
+    Truncate = uacpi_sys::UACPI_OVERFLOW_TRUNCATE,
+    Disallow = uacpi_sys::UACPI_OVERFLOW_DISALLOW
+}
+
+impl Into<i32> for OverflowBehavior {
+    fn into(self) -> i32 {
+        match self {
+            OverflowBehavior::Allow => uacpi_sys::UACPI_OVERFLOW_ALLOW,
+            OverflowBehavior::Truncate => uacpi_sys::UACPI_OVERFLOW_TRUNCATE,
+            OverflowBehavior::Disallow => uacpi_sys::UACPI_OVERFLOW_DISALLOW,
+        }
+    }
+}
+
+#[repr(C)]
+struct UacpiDataView<T> {
+    ptr: *const T,
+    lenth: usize
+}
+
+#[repr(C)]
+struct UacpiDataViewMut<T> {
+    ptr: *mut T,
+    lenth: usize
+}
+
+#[repr(C)]
+struct ObjectArray{
+    ptr: *mut Object,
+    size: usize
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ProcessorInfo{
+    id: u8,
+    block_address: u32,
+    block_length: u8
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct PowerResourceInfo{
+    system_level: u8,
+    resource_order: u16
+}
+
+#[repr(i32)]
+pub enum RegionOp {
+    OpAttach = uacpi_sys::UACPI_REGION_OP_ATTACH,
+    OpRead = uacpi_sys::UACPI_REGION_OP_READ,
+    OpWrite = uacpi_sys::UACPI_REGION_OP_WRITE,
+    OpDetach = uacpi_sys::UACPI_REGION_OP_DETACH,
+}
+
+#[repr(C)]
+pub(crate) struct RegionAttachDataInternal{
+    handler_context: *mut c_void,
+    namespace_node: *mut uacpi_sys::uacpi_namespace_node,
+    output: *mut c_void
+}
+
+#[repr(C)]
+pub(crate) struct RegionRWDataInternal{
+    handler_context: *mut c_void,
+    region_context: *mut c_void,
+    something: RegionRWDataUnionInternal,
+    value: u64,
+    byte_width: u8
+}
+
+pub(crate) union RegionRWDataUnionInternal {
+    address: PhysAddr,
+    offset: u64
+}
+
+#[repr(C)]
+pub(crate) struct RegionDetachDataInternal{
+    handler_context: *mut c_void,
+    region_context: *mut c_void,
+    namespace_node: *mut uacpi_sys::uacpi_namespace_node,
+}
+
+pub(crate) type RegionHandlerInternal = fn(operation: RegionOp, op_data: uacpi_sys::uacpi_handle) -> Status;
+
+pub(crate) type NotifyHandlerInternal = fn(context: uacpi_sys::uacpi_handle, namespace_node: NamespaceNode, value: u64) -> Status;
+
+#[repr(i32)]
+pub enum AddressSpace{
+    SystemMemory = uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_MEMORY,
+    SystemIO = uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_IO,
+    PCIConfig = uacpi_sys::UACPI_ADDRESS_SPACE_PCI_CONFIG,
+    EmbeddedController = uacpi_sys::UACPI_ADDRESS_SPACE_EMBEDDED_CONTROLLER,
+    SMBus = uacpi_sys::UACPI_ADDRESS_SPACE_SMBUS,
+    SystemCmos = uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_CMOS,
+    PCIBarTarget = uacpi_sys::UACPI_ADDRESS_SPACE_PCI_BAR_TARGET,
+    IPMI = uacpi_sys::UACPI_ADDRESS_SPACE_IPMI,
+    GeneralPurposeIO = uacpi_sys::UACPI_ADDRESS_SPACE_GENERAL_PURPOSE_IO,
+    GenericSerialBus = uacpi_sys::UACPI_ADDRESS_SPACE_GENERIC_SERIAL_BUS,
+    PCC = uacpi_sys::UACPI_ADDRESS_SPACE_PCC,
+    PRM = uacpi_sys::UACPI_ADDRESS_SPACE_PRM,
+    FFIXEDHW = uacpi_sys::UACPI_ADDRESS_SPACE_FFIXEDHW,
+}
+
+impl AddressSpace {
+    
+    pub fn to_string(&self) -> &str {
+        match self {
+            AddressSpace::SystemMemory => "SystemMemory",
+            AddressSpace::SystemIO => "SystemIO",
+            AddressSpace::PCIConfig => "PCI_Config",
+            AddressSpace::EmbeddedController => "EmbeddedControl",
+            AddressSpace::SMBus => "SMBus",
+            AddressSpace::SystemCmos => "SystemCMOS",
+            AddressSpace::PCIBarTarget => "PciBarTarget",
+            AddressSpace::IPMI => "IPMI",
+            AddressSpace::GeneralPurposeIO => "GeneralPurposeIO",
+            AddressSpace::GenericSerialBus => "GenericSerialBus",
+            AddressSpace::PCC => "PCC",
+            AddressSpace::PRM => "PRM",
+            AddressSpace::FFIXEDHW => "FFixedHW",
+        }
+    }
+
+}
+
+#[repr(i32)]
+pub enum FirmwareRequestType{
+    Breackpoint = uacpi_sys::UACPI_FIRMWARE_REQUEST_TYPE_BREAKPOINT,
+    Fatal = uacpi_sys::UACPI_FIRMWARE_REQUEST_TYPE_FATAL,
+}
+
+#[repr(u32)]
+pub enum InterruptRet {
+    NotHandled = uacpi_sys::UACPI_INTERRUPT_NOT_HANDLED,
+    Handled = uacpi_sys::UACPI_INTERRUPT_HANDLED,
+}
+
+pub(crate) type InterruptHandlerInternal = fn(handle: uacpi_sys::uacpi_handle) -> InterruptRet;
+
+#[repr(i32)]
+pub enum IterationDecision{
+    Continue = uacpi_sys::UACPI_ITERATION_DECISION_CONTINUE,
+    Break = uacpi_sys::UACPI_ITERATION_DECISION_BREAK,
+
+    // Only applicable for uacpi_namespace_for_each_child
+    NextPeer = uacpi_sys::UACPI_ITERATION_DECISION_NEXT_PEER,
 }
