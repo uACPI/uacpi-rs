@@ -1,9 +1,9 @@
+use std::process::Command;
 use std::{
     env,
     error::Error,
     path::{Path, PathBuf},
 };
-use std::process::Command;
 
 const SOURCES: &[&str] = &[
     "source/default_handlers.c",
@@ -24,7 +24,7 @@ const SOURCES: &[&str] = &[
     "source/tables.c",
     "source/types.c",
     "source/uacpi.c",
-    "source/utilities.c"
+    "source/utilities.c",
 ];
 
 fn init_submodule(uacpi_path: &Path) {
@@ -66,7 +66,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     if cfg!(target_arch = "x86_64") || cfg!(target_arch = "x86") {
         cc.flag("-mno-red-zone");
     }
-
 
     if cfg!(feature = "reduced-hardware") {
         cc.define("UACPI_REDUCED_HARDWARE", "1");
