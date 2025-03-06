@@ -3,7 +3,8 @@ use core::{alloc::{AllocError, GlobalAlloc}, ffi::{c_char, c_void, CStr}, mem::{
 
 use alloc::boxed::Box;
 
-use crate::status::Status;
+use crate::status::UacpiError;
+
 
 
 
@@ -16,6 +17,19 @@ enum InitLevel {
     NamespaceInitialized = uacpi_sys::UACPI_INIT_LEVEL_NAMESPACE_INITIALIZED
 }
 
+impl From<i32> for InitLevel {
+    fn from(value: i32) -> Self {
+        match value {
+            uacpi_sys::UACPI_INIT_LEVEL_EARLY => InitLevel::Early,
+            uacpi_sys::UACPI_INIT_LEVEL_SUBSYSTEM_INITIALIZED => InitLevel::SubsystemInitialized,
+            uacpi_sys::UACPI_INIT_LEVEL_NAMESPACE_LOADED => InitLevel::NamespaceLoaded,
+            uacpi_sys::UACPI_INIT_LEVEL_NAMESPACE_INITIALIZED => InitLevel::NamespaceInitialized,
+            _ => unreachable!("Undefined Value returned by UACPI (Undefined Behavior)")
+        }
+    }
+}
+
+
 #[repr(i32)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum LogLevel{
@@ -24,6 +38,19 @@ enum LogLevel{
     Info = uacpi_sys::UACPI_LOG_INFO,
     Warn = uacpi_sys::UACPI_LOG_WARN,
     Error = uacpi_sys::UACPI_LOG_ERROR,
+}
+
+impl From<i32> for LogLevel {
+    fn from(value: i32) -> Self {
+        match value {
+            uacpi_sys::UACPI_LOG_DEBUG => LogLevel::Debug,
+            uacpi_sys::UACPI_LOG_TRACE => LogLevel::Trace,
+            uacpi_sys::UACPI_LOG_INFO => LogLevel::Info,
+            uacpi_sys::UACPI_LOG_WARN => LogLevel::Warn,
+            uacpi_sys::UACPI_LOG_ERROR => LogLevel::Error,
+            _ => unreachable!("Undefined Value returned by UACPI (Undefined Behavior)")
+        }
+    }
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -47,7 +74,14 @@ struct DataView<T>{
     size: uacpi_sys::uacpi_size
 }
 
+///Generic Uacpi Handle
 pub struct Handle(pub(crate) uacpi_sys::uacpi_handle);
+
+//TODO
+pub struct PciDeviceHandle(pub(crate) Handle);
+//TODO
+pub struct IOPortHandle(pub(crate) Handle);
+
 
 pub struct NamespaceNode(pub(crate) *mut uacpi_sys::uacpi_namespace_node);
 
@@ -96,7 +130,7 @@ impl From<i32> for ObjectType {
 
             uacpi_sys::UACPI_OBJECT_REFERENCE => ObjectType::Reference,
             uacpi_sys::UACPI_OBJECT_BUFFER_INDEX => ObjectType::BufferIndex,
-            _ => core::unreachable!()
+            _ => unreachable!("Undefined Value returned by UACPI (Undefined Behavior)")
         }
     }
 }
@@ -124,6 +158,7 @@ pub enum ObjectTypeBits{
     BufferIndex = (1 << ObjectType::BufferIndex as i32),
     Any = -1
 }
+
 
 pub struct Object(pub(crate) *mut uacpi_sys::uacpi_object);
 
@@ -168,39 +203,33 @@ impl Object {
         )
     }
 
-    pub fn new_integer(value: u64) -> Self {
-        Self::new_integer_safe(value, OverflowBehavior::Allow).expect("uACPI error")
+    pub fn new_integer(value: u64) -> Result<Self, UacpiError> {
+        Self::new_integer_safe(value, OverflowBehavior::Allow)
     }
 
-    pub fn new_integer_safe(value: u64, overflow_behavior: OverflowBehavior) -> Result<Self,()> {
+    pub fn new_integer_safe(value: u64, overflow_behavior: OverflowBehavior) -> Result<Self,UacpiError> {
         let mut ptr: *mut uacpi_sys::uacpi_object = core::ptr::null_mut();
         let ptr2: *mut *mut uacpi_sys::uacpi_object = &mut ptr;
-        let status: Status = unsafe { uacpi_sys::uacpi_object_create_integer_safe(value, overflow_behavior.into(), ptr2).try_into().expect("uACPI Status Error") };
+        UacpiError::from_raw( unsafe { uacpi_sys::uacpi_object_create_integer_safe(value, overflow_behavior.into(), ptr2) } )?;
 
-        match status {
-            Status::OK => Ok(Self(ptr)),
-            Status::InvalidArgument => Err(()),
-            _ => unreachable!()
-        }
+        Ok(Self(ptr))
 
     }
 
-    pub fn assign_integer(&self, value: u64) -> Status {
-        unsafe { uacpi_sys::uacpi_object_assign_integer(self.0, value).try_into().expect("uACPI Status Error") }
+    pub fn assign_integer(&self, value: u64) -> Result<(), UacpiError> {
+        UacpiError::from_raw(
+            unsafe { uacpi_sys::uacpi_object_assign_integer(self.0, value) }
+        )
     }
 
     #[allow(unused_mut)]
-    pub fn get_integer(&self) -> Result<u64,Status> {
+    pub fn get_integer(&self) -> Result<u64,UacpiError> {
         let mut value: u64 = 0;
         let mut ptr: *mut u64 = &mut value;
 
-        let output = unsafe { uacpi_sys::uacpi_object_get_integer(self.0, ptr).try_into().expect("uACPI Status Error") };
+        UacpiError::from_raw( unsafe { uacpi_sys::uacpi_object_get_integer(self.0, ptr) } )?;
 
-        if output == Status::OK {
-            return Ok(value);
-        }
-
-        Err(output)
+        Ok(value)
     }
 
     pub fn new_string(value: &[c_char]) -> Self {}
@@ -214,63 +243,56 @@ impl Object {
         )
     }
 
-    pub fn get_string(&self) -> Result<&mut[c_char],Status> {}
-    pub fn get_buffer(&self) -> Result<&mut[u8],Status> {}
+    pub fn get_string(&self) -> Result<&mut[c_char], UacpiError> {}
+    pub fn get_buffer(&self) -> Result<&mut[u8], UacpiError> {}
 
     pub fn is_aml_namepath(&self) -> bool {
         unsafe { uacpi_sys::uacpi_object_is_aml_namepath(self.0) }
     }
 
-    pub fn resolve_as_aml_namepath(&self, scope: &NamespaceNode) -> Result<NamespaceNode,Status> {}
+    pub fn resolve_as_aml_namepath(&self, scope: &NamespaceNode) -> Result<NamespaceNode, UacpiError> {}
 
-    pub fn assign_string(&self, value: &mut[c_char]) -> Status {}
-    pub fn assign_buffer(&self, value: &mut[u8]) -> Status {
+    pub fn assign_string(&self, value: &mut[c_char]) -> Result<(), UacpiError> {}
+    pub fn assign_buffer(&self, value: &mut[u8]) -> Result<(), UacpiError> {
         let uacpi_slice = UacpiDataView::<u8>{ ptr: value.as_ptr(), lenth: value.len() };
 
-        unsafe { uacpi_sys::uacpi_object_assign_buffer(self.0, transmute(uacpi_slice)).try_into().expect("uACPI Status Error")}
-
+        UacpiError::from_raw(
+            unsafe { uacpi_sys::uacpi_object_assign_buffer(self.0, transmute(uacpi_slice))}
+        )
     }
 
     pub fn create_package<A>(content: Box<Object,A>) -> Self where A : core::alloc::Allocator {}
 
-    pub fn get_package(&self) -> Result<Box<Object>,Result<AllocError, Status>>{}
-    pub fn get_package_allocator<A: core::alloc::Allocator>(&self) -> Result<Box<Object,A>,Result<AllocError, Status>>{}
+    pub fn get_package(&self) -> Result<Box<Object>,Result<AllocError, Result<(), UacpiError>>>{}
+    pub fn get_package_allocator<A: core::alloc::Allocator>(&self) -> Result<Box<Object,A>,Result<AllocError, Result<(), UacpiError>>>{}
 
-    pub fn assign_package(&self, content: Box<Object>) -> Status {}
-    pub fn assign_package_allocator<A: core::alloc::Allocator>(&self, content: Box<Object,A>) -> Status {}
+    pub fn assign_package(&self, content: Box<Object>) -> Result<(), UacpiError> {}
+    pub fn assign_package_allocator<A: core::alloc::Allocator>(&self, content: Box<Object,A>) -> Result<(), UacpiError> {}
 
     pub fn create_reference(&self) -> Object {}
 
-    pub fn assign_reference(&self, child: &Object) -> Status {}
+    pub fn assign_reference(&self, child: &Object) -> Result<(), UacpiError> {}
 
-    pub fn get_referenced_object(&self) ->Result<Object,Status> {}
+    pub fn get_referenced_object(&self) ->Result<Object, UacpiError> {}
 
     #[allow(unused_mut)]
-    pub fn get_processor_info(&self) -> Result<ProcessorInfo,Status> {
+    pub fn get_processor_info(&self) -> Result<ProcessorInfo, UacpiError> {
         let mut output = ProcessorInfo{ id: 0, block_address: 0, block_length: 0 };
         let mut output_ptr: *mut ProcessorInfo = &mut output;
 
-        let output_status: Status = unsafe { uacpi_sys::uacpi_object_get_processor_info(self.0, output_ptr as *mut uacpi_sys::uacpi_processor_info).try_into().expect("uACPI Status Error") };
+        UacpiError::from_raw( unsafe { uacpi_sys::uacpi_object_get_processor_info(self.0, output_ptr as *mut uacpi_sys::uacpi_processor_info) } )?;
         
-        if output_status == Status::OK {
-            return Ok(output);
-        }
-
-        Err(output_status)
+        Ok(output)
     }
 
     #[allow(unused_mut)]
-    pub fn get_power_resource_info(&self) -> Result<PowerResourceInfo, Status> {
+    pub fn get_power_resource_info(&self) -> Result<PowerResourceInfo, UacpiError> {
         let mut output = PowerResourceInfo{ system_level: 0, resource_order: 0 };
         let mut output_ptr: *mut PowerResourceInfo = &mut output;
 
-        let output_status: Status = unsafe { uacpi_sys::uacpi_object_get_power_resource_info(self.0, output_ptr as *mut uacpi_sys::uacpi_power_resource_info).try_into().expect("") };
+        UacpiError::from_raw( unsafe { uacpi_sys::uacpi_object_get_power_resource_info(self.0, output_ptr as *mut uacpi_sys::uacpi_power_resource_info) } )?;
         
-        if output_status == Status::OK {
-            return Ok(output);
-        }
-
-        Err(output_status)
+        Ok(output)
     }
 
 }
@@ -291,6 +313,13 @@ impl Drop for Object {
         }
     }
 }
+
+#[repr(C)]
+pub(crate) union ObjectName {
+    text: [c_char; 4],
+    id: u32
+}
+
 
 #[repr(i32)]
 pub enum OverflowBehavior{
@@ -344,17 +373,66 @@ pub struct PowerResourceInfo{
 
 #[repr(i32)]
 pub enum RegionOp {
-    OpAttach = uacpi_sys::UACPI_REGION_OP_ATTACH,
-    OpRead = uacpi_sys::UACPI_REGION_OP_READ,
-    OpWrite = uacpi_sys::UACPI_REGION_OP_WRITE,
-    OpDetach = uacpi_sys::UACPI_REGION_OP_DETACH,
+    Attach = uacpi_sys::UACPI_REGION_OP_ATTACH,
+    Detach = uacpi_sys::UACPI_REGION_OP_DETACH,
+    Read = uacpi_sys::UACPI_REGION_OP_READ,
+    Write = uacpi_sys::UACPI_REGION_OP_WRITE,
+    PccSend = uacpi_sys::UACPI_REGION_OP_PCC_SEND,
+    GPIORead = uacpi_sys::UACPI_REGION_OP_GPIO_READ,
+    GPIOWrite = uacpi_sys::UACPI_REGION_OP_GPIO_WRITE,
+    IPMICommand = uacpi_sys::UACPI_REGION_OP_IPMI_COMMAND,
+    FFIXEDHWCommand = uacpi_sys::UACPI_REGION_OP_FFIXEDHW_COMMAND,
+    PRMCommand = uacpi_sys::UACPI_REGION_OP_PRM_COMMAND,
+    SerialRead = uacpi_sys::UACPI_REGION_OP_SERIAL_READ,
+    SerialWrite = uacpi_sys::UACPI_REGION_OP_SERIAL_WRITE,
 }
+
+impl From<i32> for RegionOp {
+    fn from(value: i32) -> Self {
+        match value {
+            uacpi_sys::UACPI_REGION_OP_ATTACH => RegionOp::Attach,
+            uacpi_sys::UACPI_REGION_OP_DETACH => RegionOp::Detach,
+            uacpi_sys::UACPI_REGION_OP_READ => RegionOp::Read,
+            uacpi_sys::UACPI_REGION_OP_WRITE => RegionOp::Write,
+            uacpi_sys::UACPI_REGION_OP_PCC_SEND => RegionOp::PccSend,
+            uacpi_sys::UACPI_REGION_OP_GPIO_READ => RegionOp::GPIORead,
+            uacpi_sys::UACPI_REGION_OP_GPIO_WRITE => RegionOp::GPIOWrite,
+            uacpi_sys::UACPI_REGION_OP_IPMI_COMMAND => RegionOp::IPMICommand,
+            uacpi_sys::UACPI_REGION_OP_FFIXEDHW_COMMAND => RegionOp::FFIXEDHWCommand,
+            uacpi_sys::UACPI_REGION_OP_PRM_COMMAND => RegionOp::PRMCommand,
+            uacpi_sys::UACPI_REGION_OP_SERIAL_READ => RegionOp::SerialRead,
+            uacpi_sys::UACPI_REGION_OP_SERIAL_WRITE => RegionOp::SerialWrite,
+
+            _ => unreachable!("Undefined Value returned by UACPI (Undefined Behavior)")
+        }
+    }
+}
+
+#[repr(C)]
+pub(crate) struct GenericRegionInfoInternal{}
+
+
+#[repr(C)]
+pub(crate) struct PCCRegionInfoInternal{}
+
+
+#[repr(C)]
+pub(crate) struct GPIORegionInfoInternal{}
+
 
 #[repr(C)]
 pub(crate) struct RegionAttachDataInternal{
     handler_context: *mut c_void,
     namespace_node: *mut uacpi_sys::uacpi_namespace_node,
-    output: *mut c_void
+    info: Region_Info,
+    out_region_context: *mut c_void
+}
+
+#[repr(C)]
+pub(crate) union Region_Info {
+    generic: GenericRegionInfoInternal,
+    pcc: PCCRegionInfoInternal,
+    gpio: GPIORegionInfoInternal
 }
 
 #[repr(C)]
@@ -366,10 +444,49 @@ pub(crate) struct RegionRWDataInternal{
     byte_width: u8
 }
 
+#[repr(C)]
 pub(crate) union RegionRWDataUnionInternal {
     address: PhysAddr,
     offset: u64
 }
+
+
+#[repr(C)]
+pub(crate) struct RegionPCCSendDataInternal{}
+
+
+#[repr(C)]
+pub(crate) struct RegionGPIORWDataInternal{}
+
+
+#[repr(C)]
+pub(crate) struct RegionIPMIRWDataInternal{}
+
+
+type RegionFFIXEDHWRWDataInternal = RegionIPMIRWDataInternal;
+
+
+#[repr(C)]
+pub(crate) struct RegionPRMRWDataInternal{}
+
+#[repr(i32)]
+pub enum AccessAttribute {
+    Quick = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_QUICK,
+    SendReceive = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_SEND_RECEIVE,
+    Byte = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_BYTE,
+    Word = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_WORD,
+    Block = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_BLOCK,
+    Bytes = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_BYTES,
+    ProcessCall = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_PROCESS_CALL,
+    BlockProcessCall = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_BLOCK_PROCESS_CALL,
+    RawBytes = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_RAW_BYTES,
+    RawProcessBytes = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_RAW_PROCESS_BYTES,
+}
+
+
+#[repr(C)]
+pub(crate) struct RegionSerialRWDataInternal{}
+
 
 #[repr(C)]
 pub(crate) struct RegionDetachDataInternal{
@@ -378,9 +495,10 @@ pub(crate) struct RegionDetachDataInternal{
     namespace_node: *mut uacpi_sys::uacpi_namespace_node,
 }
 
-pub(crate) type RegionHandlerInternal = fn(operation: RegionOp, op_data: uacpi_sys::uacpi_handle) -> Status;
 
-pub(crate) type NotifyHandlerInternal = fn(context: uacpi_sys::uacpi_handle, namespace_node: NamespaceNode, value: u64) -> Status;
+pub(crate) type RegionHandlerInternal = fn(operation: RegionOp, op_data: uacpi_sys::uacpi_handle) -> Result<(), UacpiError>;
+
+pub(crate) type NotifyHandlerInternal = fn(context: uacpi_sys::uacpi_handle, namespace_node: NamespaceNode, value: u64) -> Result<(), UacpiError>;
 
 #[repr(i32)]
 pub enum AddressSpace{
@@ -397,6 +515,29 @@ pub enum AddressSpace{
     PCC = uacpi_sys::UACPI_ADDRESS_SPACE_PCC,
     PRM = uacpi_sys::UACPI_ADDRESS_SPACE_PRM,
     FFIXEDHW = uacpi_sys::UACPI_ADDRESS_SPACE_FFIXEDHW,
+    VendorSpecific(i32)
+}
+
+impl From<i32> for AddressSpace {
+    fn from(value: i32) -> Self {
+        match value {
+            uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_MEMORY => AddressSpace::SystemMemory,
+            uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_IO => AddressSpace::SystemIO,
+            uacpi_sys::UACPI_ADDRESS_SPACE_PCI_CONFIG => AddressSpace::PCIConfig,
+            uacpi_sys::UACPI_ADDRESS_SPACE_EMBEDDED_CONTROLLER => AddressSpace::EmbeddedController,
+            uacpi_sys::UACPI_ADDRESS_SPACE_SMBUS => AddressSpace::SMBus,
+            uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_CMOS => AddressSpace::SystemCmos,
+            uacpi_sys::UACPI_ADDRESS_SPACE_PCI_BAR_TARGET => AddressSpace::PCIBarTarget,
+            uacpi_sys::UACPI_ADDRESS_SPACE_IPMI => AddressSpace::IPMI,
+            uacpi_sys::UACPI_ADDRESS_SPACE_GENERAL_PURPOSE_IO => AddressSpace::GeneralPurposeIO,
+            uacpi_sys::UACPI_ADDRESS_SPACE_GENERIC_SERIAL_BUS => AddressSpace::GenericSerialBus,
+            uacpi_sys::UACPI_ADDRESS_SPACE_PCC => AddressSpace::PCC,
+            uacpi_sys::UACPI_ADDRESS_SPACE_PRM => AddressSpace::PRM,
+            uacpi_sys::UACPI_ADDRESS_SPACE_FFIXEDHW => AddressSpace::FFIXEDHW,
+            uacpi_sys::UACPI_ADDRESS_SPACE_TABLE_DATA => unreachable!("Internal Datatype leaked!"),
+            _ => AddressSpace::VendorSpecific(value)
+        }
+    }
 }
 
 impl AddressSpace {
@@ -416,6 +557,7 @@ impl AddressSpace {
             AddressSpace::PCC => "PCC",
             AddressSpace::PRM => "PRM",
             AddressSpace::FFIXEDHW => "FFixedHW",
+            AddressSpace::VendorSpecific(_) => "<vendor specific>"
         }
     }
 
@@ -426,6 +568,12 @@ pub enum FirmwareRequestType{
     Breackpoint = uacpi_sys::UACPI_FIRMWARE_REQUEST_TYPE_BREAKPOINT,
     Fatal = uacpi_sys::UACPI_FIRMWARE_REQUEST_TYPE_FATAL,
 }
+
+#[repr(C)]
+pub(crate) struct FirmwareRequestInternal {}
+
+
+
 
 #[repr(u32)]
 pub enum InterruptRet {
