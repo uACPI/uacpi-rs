@@ -5,9 +5,10 @@ edition = "2021"
 
 [dependencies]
 uacpi-sys = { path = "../uacpi-sys" }
-log = { version = "0.4", optional = true }
+#log = { version = "0.4", optional = true }
 
 [features]
-default = ["logging"]
-logging = ["log"]
+default = []
+#logging = ["log"]
 reduced-hardware = ["uacpi-sys/reduced-hardware"]
+barebones-mode = ["uacpi-sys/barebones-mode"]

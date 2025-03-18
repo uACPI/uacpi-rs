@@ -12,3 +12,4 @@ cc = "1.1.18"
 
 [features]
 reduced-hardware = []
+barebones-mode = []

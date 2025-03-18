@@ -71,6 +71,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         cc.define("UACPI_REDUCED_HARDWARE", "1");
     }
 
+    if cfg!(feature = "barebones-mode") {
+        cc.define("UACPI_BAREBONES_MODE", "1");
+    }
+
     cc.compile("uacpi");
 
     let bindings = bindgen::Builder::default()
@@ -81,6 +85,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             "-DUACPI_SIZED_FREES=1",
             #[cfg(feature = "reduced-hardware")]
             "-DUACPI_REDUCED_HARDWARE=1",
+            #[cfg(feature = "barebones-mode")]
+            "-DUACPI_BAREBONES_MODE=1",
             "-ffreestanding",
         ])
         .prepend_enum_name(false)
