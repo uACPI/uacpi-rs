@@ -1,5 +1,4 @@
 use core::{
-    alloc::{AllocError, GlobalAlloc},
     ffi::{c_char, c_void, CStr},
     mem::{transmute, MaybeUninit}, ptr::{null_mut, slice_from_raw_parts_mut},
 };
