@@ -4,10 +4,19 @@ use core::{
     mem::{transmute, MaybeUninit}, ptr::{null_mut, slice_from_raw_parts_mut},
 };
 
-use alloc::{alloc::Allocator, boxed::Box, slice};
+#[cfg(feature = "alloc")]
+use core::alloc::AllocError;
+
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
+
+#[cfg(feature = "allocator_api")]
+use alloc::alloc::Allocator;
+
 
 use crate::status::{Status, UacpiError};
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(i32)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum InitLevel {
@@ -17,6 +26,7 @@ enum InitLevel {
     NamespaceInitialized = uacpi_sys::UACPI_INIT_LEVEL_NAMESPACE_INITIALIZED,
 }
 
+#[cfg(feature = "aml_interpreter")]
 impl From<i32> for InitLevel {
     fn from(value: i32) -> Self {
         match value {
@@ -67,16 +77,22 @@ pub struct PCIAddress {
     pub function: u8,
 }
 
-///Generic Uacpi Handle
+///Generic Uacpi Handle (replace with specific variants where possible and make this internal only)
+#[cfg(feature = "aml_interpreter")]
 pub struct Handle(pub(crate) uacpi_sys::uacpi_handle);
 
 //TODO
+#[cfg(feature = "aml_interpreter")]
 pub struct PciDeviceHandle(pub(crate) Handle);
+
 //TODO
+#[cfg(feature = "aml_interpreter")]
 pub struct IOPortHandle(pub(crate) Handle);
 
+#[cfg(feature = "aml_interpreter")]
 pub struct NamespaceNode(pub(crate) *mut uacpi_sys::uacpi_namespace_node);
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(i32)]
 pub enum ObjectType {
     Uninitialized = uacpi_sys::UACPI_OBJECT_UNINITIALIZED,
@@ -100,6 +116,7 @@ pub enum ObjectType {
     BufferIndex = uacpi_sys::UACPI_OBJECT_BUFFER_INDEX,
 }
 
+#[cfg(feature = "aml_interpreter")]
 impl From<i32> for ObjectType {
     fn from(value: i32) -> Self {
         match value {
@@ -127,6 +144,7 @@ impl From<i32> for ObjectType {
     }
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(i32)]
 pub enum ObjectTypeBits {
     None = 0,
@@ -150,6 +168,7 @@ pub enum ObjectTypeBits {
     Any = -1,
 }
 
+#[cfg(feature = "aml_interpreter")]
 impl From<ObjectType> for ObjectTypeBits {
     
     fn from(value: ObjectType) -> Self {
@@ -158,8 +177,10 @@ impl From<ObjectType> for ObjectTypeBits {
 
 }
 
+#[cfg(feature = "aml_interpreter")]
 pub struct Object(pub(crate) *mut uacpi_sys::uacpi_object);
 
+#[cfg(feature = "aml_interpreter")]
 impl Object {
     pub fn get_type(&self) -> ObjectType {
         unsafe { uacpi_sys::uacpi_object_get_type(self.0).into() }
@@ -314,24 +335,32 @@ impl Object {
         })
     }
 
+    #[cfg(feature = "alloc")]
     pub fn create_package(content: Box<Object>) -> Self {
 
     }
 
+    #[cfg(feature = "allocator_api")]
     pub fn create_package_allocator<A>(content: Box<Object, A>) -> Self
     where
         A: Allocator,
     {
     }
 
+    #[cfg(feature = "alloc")]
     pub fn get_package(&self) -> Result<Box<Object>, Result<AllocError, Result<(), UacpiError>>> {}
-    pub fn get_package_allocator<A: Allocator>(
+
+    #[cfg(feature = "allocator_api")]
+    pub fn get_package_in<A: Allocator>(
         &self,
     ) -> Result<Box<Object, A>, Result<AllocError, Result<(), UacpiError>>> {
     }
 
+    #[cfg(feature = "alloc")]
     pub fn assign_package(&self, content: Box<Object>) -> Result<(), UacpiError> {}
-    pub fn assign_package_allocator<A: core::alloc::Allocator>(
+
+    #[cfg(feature = "allocator_api")]
+    pub fn assign_package_in<A: core::alloc::Allocator>(
         &self,
         content: Box<Object, A>,
     ) -> Result<(), UacpiError> {
@@ -379,7 +408,7 @@ impl Object {
         Ok(output)
     }
 }
-
+#[cfg(feature = "aml_interpreter")]
 impl Clone for Object {
     fn clone(&self) -> Self {
         unsafe {
@@ -389,6 +418,7 @@ impl Clone for Object {
     }
 }
 
+#[cfg(feature = "aml_interpreter")]
 impl Drop for Object {
     fn drop(&mut self) {
         unsafe {
@@ -397,12 +427,14 @@ impl Drop for Object {
     }
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) union ObjectName {
     text: [c_char; 4],
     id: u32,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(i32)]
 pub enum OverflowBehavior {
     Allow = uacpi_sys::UACPI_OVERFLOW_ALLOW,
@@ -410,6 +442,7 @@ pub enum OverflowBehavior {
     Disallow = uacpi_sys::UACPI_OVERFLOW_DISALLOW,
 }
 
+#[cfg(feature = "aml_interpreter")]
 impl Into<i32> for OverflowBehavior {
     fn into(self) -> i32 {
         match self {
@@ -420,24 +453,28 @@ impl Into<i32> for OverflowBehavior {
     }
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 struct UacpiDataView<T> {
     ptr: *const T,
     length: usize,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 struct UacpiDataViewMut<T> {
     ptr: *mut T,
     length: usize,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 struct ObjectArray {
     ptr: *mut Object,
     size: usize,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ProcessorInfo {
@@ -446,6 +483,7 @@ pub struct ProcessorInfo {
     block_length: u8,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct PowerResourceInfo {
@@ -453,6 +491,7 @@ pub struct PowerResourceInfo {
     resource_order: u16,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(i32)]
 pub enum RegionOp {
     Attach = uacpi_sys::UACPI_REGION_OP_ATTACH,
@@ -469,6 +508,7 @@ pub enum RegionOp {
     SerialWrite = uacpi_sys::UACPI_REGION_OP_SERIAL_WRITE,
 }
 
+#[cfg(feature = "aml_interpreter")]
 impl From<i32> for RegionOp {
     fn from(value: i32) -> Self {
         match value {
@@ -490,15 +530,19 @@ impl From<i32> for RegionOp {
     }
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct GenericRegionInfoInternal {}
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct PCCRegionInfoInternal {}
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct GPIORegionInfoInternal {}
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct RegionAttachDataInternal {
     handler_context: *mut c_void,
@@ -507,6 +551,7 @@ pub(crate) struct RegionAttachDataInternal {
     out_region_context: *mut c_void,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) union Region_Info {
     generic: GenericRegionInfoInternal,
@@ -514,6 +559,7 @@ pub(crate) union Region_Info {
     gpio: GPIORegionInfoInternal,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct RegionRWDataInternal {
     handler_context: *mut c_void,
@@ -523,26 +569,33 @@ pub(crate) struct RegionRWDataInternal {
     byte_width: u8,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) union RegionRWDataUnionInternal {
     address: PhysAddr,
     offset: u64,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct RegionPCCSendDataInternal {}
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct RegionGPIORWDataInternal {}
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct RegionIPMIRWDataInternal {}
 
+#[cfg(feature = "aml_interpreter")]
 type RegionFFIXEDHWRWDataInternal = RegionIPMIRWDataInternal;
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct RegionPRMRWDataInternal {}
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(i32)]
 pub enum AccessAttribute {
     Quick = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_QUICK,
@@ -557,9 +610,11 @@ pub enum AccessAttribute {
     RawProcessBytes = uacpi_sys::UACPI_ACCESS_ATTRIBUTE_RAW_PROCESS_BYTES,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct RegionSerialRWDataInternal {}
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct RegionDetachDataInternal {
     handler_context: *mut c_void,
@@ -567,9 +622,11 @@ pub(crate) struct RegionDetachDataInternal {
     namespace_node: *mut uacpi_sys::uacpi_namespace_node,
 }
 
+#[cfg(feature = "aml_interpreter")]
 pub(crate) type RegionHandlerInternal =
     fn(operation: RegionOp, op_data: uacpi_sys::uacpi_handle) -> Result<(), UacpiError>;
 
+#[cfg(feature = "aml_interpreter")]
 pub(crate) type NotifyHandlerInternal = fn(
     context: uacpi_sys::uacpi_handle,
     namespace_node: NamespaceNode,
@@ -637,23 +694,28 @@ impl AddressSpace {
     }
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(i32)]
 pub enum FirmwareRequestType {
     Breackpoint = uacpi_sys::UACPI_FIRMWARE_REQUEST_TYPE_BREAKPOINT,
     Fatal = uacpi_sys::UACPI_FIRMWARE_REQUEST_TYPE_FATAL,
 }
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 pub(crate) struct FirmwareRequestInternal {}
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(u32)]
 pub enum InterruptRet {
     NotHandled = uacpi_sys::UACPI_INTERRUPT_NOT_HANDLED,
     Handled = uacpi_sys::UACPI_INTERRUPT_HANDLED,
 }
 
+#[cfg(feature = "aml_interpreter")]
 pub(crate) type InterruptHandlerInternal = fn(handle: uacpi_sys::uacpi_handle) -> InterruptRet;
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(i32)]
 pub enum IterationDecision {
     Continue = uacpi_sys::UACPI_ITERATION_DECISION_CONTINUE,

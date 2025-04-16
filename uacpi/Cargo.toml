@@ -8,7 +8,13 @@ uacpi-sys = { path = "../uacpi-sys" }
 #log = { version = "0.4", optional = true }
 
 [features]
-default = []
+default = ["allocator_api", "full_acpi_hardware"]
+#default = ["tables-only"]
 #logging = ["log"]
-reduced-hardware = ["uacpi-sys/reduced-hardware"]
-barebones-mode = ["uacpi-sys/barebones-mode"]
+reduced-hardware-only = ["uacpi-sys/reduced-hardware"]
+tables-only = ["uacpi-sys/barebones-mode"]
+std = ["alloc"]
+allocator_api = ["alloc"]
+alloc = []
+aml_interpreter = []
+full_acpi_hardware = ["aml_interpreter"]
