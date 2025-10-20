@@ -1,6 +1,6 @@
 use core::{
     ffi::{c_char, c_void, CStr},
-    mem::{transmute, MaybeUninit}, ptr::{null_mut, slice_from_raw_parts_mut},
+    mem::transmute, ptr::{null_mut, slice_from_raw_parts_mut, NonNull},
 };
 
 #[cfg(feature = "alloc")]
@@ -177,16 +177,16 @@ impl From<ObjectType> for ObjectTypeBits {
 }
 
 #[cfg(feature = "aml_interpreter")]
-pub struct Object(pub(crate) *mut uacpi_sys::uacpi_object);
+pub struct Object(pub(crate) NonNull<uacpi_sys::uacpi_object>);
 
 #[cfg(feature = "aml_interpreter")]
 impl Object {
     pub fn get_type(&self) -> ObjectType {
-        unsafe { uacpi_sys::uacpi_object_get_type(self.0).into() }
+        unsafe { uacpi_sys::uacpi_object_get_type(self.0.as_ptr()).into() }
     }
 
     pub fn is_one_of(&self, type_bits: i32) -> bool {
-        unsafe { uacpi_sys::uacpi_object_is_one_of(self.0, type_bits) }
+        unsafe { uacpi_sys::uacpi_object_is_one_of(self.0.as_ptr(), type_bits) }
     }
 
     pub fn as_str(&self) -> &str {
@@ -212,68 +212,71 @@ impl Object {
         }
     }
 
-    pub fn new_uninitialized() -> Self {
-        Self(unsafe { uacpi_sys::uacpi_object_create_uninitialized() })
+    pub fn new_uninitialized() -> Option<Self> {
+        Some( Self( NonNull::new(unsafe { uacpi_sys::uacpi_object_create_uninitialized() } )?))
     }
 
-    pub fn new_integer(value: u64) -> Result<Self, UacpiError> {
+    pub fn new_integer(value: u64) -> Result<Option<Self>, UacpiError> {
         Self::new_integer_safe(value, OverflowBehavior::Allow)
     }
 
     pub fn new_integer_safe(
         value: u64,
         overflow_behavior: OverflowBehavior,
-    ) -> Result<Self, UacpiError> {
+    ) -> Result<Option<Self>, UacpiError> {
 
         let mut ptr: *mut uacpi_sys::uacpi_object = core::ptr::null_mut();
         Status::evaluate_uacpi_status(unsafe {
             uacpi_sys::uacpi_object_create_integer_safe(value, overflow_behavior.into(), &mut ptr)
         })?;
 
-        Ok(Self(ptr))
+        //Workaround as Rust is apparently to fucking stupid to function correctly if the single line of code is directly used in Ok()
+        let m  = |ptr: *mut uacpi_sys::uacpi_object| -> Option<Self> {
+            Some(Self(NonNull::new(ptr)?))
+        };
+
+        Ok(
+            m(ptr)
+        )
 
     }
 
     pub fn assign_integer(&self, value: u64) -> Result<(), UacpiError> {
-        Status::evaluate_uacpi_status(unsafe { uacpi_sys::uacpi_object_assign_integer(self.0, value) })
+        Status::evaluate_uacpi_status(unsafe { uacpi_sys::uacpi_object_assign_integer(self.0.as_ptr(), value) })
     }
 
     pub fn get_integer(&self) -> Result<u64, UacpiError> {
         let mut value: u64 = 0;
 
-        Status::evaluate_uacpi_status(unsafe { uacpi_sys::uacpi_object_get_integer(self.0, &mut value) })?;
+        Status::evaluate_uacpi_status(unsafe { uacpi_sys::uacpi_object_get_integer(self.0.as_ptr(), &mut value) })?;
 
         Ok(value)
     }
 
     
-    pub fn new_string(value: &[c_char]) -> Self {
+    pub fn new_string(value: &[c_char]) -> Option<Self> {
 
         let uacpi_slice = UacpiDataView::<c_char> {
             ptr: value.as_ptr(),
             length: value.len(),
         };
-        Self(unsafe { uacpi_sys::uacpi_object_create_string(transmute(uacpi_slice)) })
+        Some( Self( NonNull::new(unsafe { uacpi_sys::uacpi_object_create_string(transmute(uacpi_slice)) } )?))
 
     }
 
-    pub fn new_cstring(value: &CStr) -> Self {
-
-        Object(
-            unsafe {
-                uacpi_sys::uacpi_object_create_cstring(value.as_ptr())
-            }
-        )
+    pub fn new_cstring(value: &CStr) -> Option<Self> {
+       
+        Some( Self( NonNull::new(unsafe { uacpi_sys::uacpi_object_create_cstring(value.as_ptr()) } )?))
 
     }
 
-    pub fn new_buffer(value: &[u8]) -> Self {
+    pub fn new_buffer(value: &[u8]) -> Option<Self> {
 
         let uacpi_slice = UacpiDataView::<u8> {
             ptr: value.as_ptr(),
             length: value.len(),
         };
-        Self(unsafe { uacpi_sys::uacpi_object_create_buffer(transmute(uacpi_slice)) })
+        Some( Self( NonNull::new(unsafe { uacpi_sys::uacpi_object_create_buffer(transmute(uacpi_slice)) } )?))
 
     }
 
@@ -281,7 +284,7 @@ impl Object {
         let mut uacpi_slice: UacpiDataViewMut::<c_char> = UacpiDataViewMut{ ptr: null_mut(), length: 0 };
 
         Status::evaluate_uacpi_status(unsafe {
-            uacpi_sys::uacpi_object_get_string(self.0, transmute(&mut uacpi_slice))
+            uacpi_sys::uacpi_object_get_string(self.0.as_ptr(), transmute(&mut uacpi_slice))
         })?;
 
         unsafe {
@@ -294,7 +297,7 @@ impl Object {
         let mut uacpi_slice: UacpiDataViewMut::<u8> = UacpiDataViewMut{ ptr: null_mut(), length: 0 };
 
         Status::evaluate_uacpi_status(unsafe {
-            uacpi_sys::uacpi_object_get_string(self.0, transmute(&mut uacpi_slice))
+            uacpi_sys::uacpi_object_get_string(self.0.as_ptr(), transmute(&mut uacpi_slice))
         })?;
 
         unsafe {
@@ -303,7 +306,7 @@ impl Object {
     }
 
     pub fn is_aml_namepath(&self) -> bool {
-        unsafe { uacpi_sys::uacpi_object_is_aml_namepath(self.0) }
+        unsafe { uacpi_sys::uacpi_object_is_aml_namepath(self.0.as_ptr()) }
     }
 
     pub fn resolve_as_aml_namepath(
@@ -319,7 +322,7 @@ impl Object {
         };
 
         Status::evaluate_uacpi_status(unsafe {
-            uacpi_sys::uacpi_object_assign_string(self.0, transmute(uacpi_slice))
+            uacpi_sys::uacpi_object_assign_string(self.0.as_ptr(), transmute(uacpi_slice))
         })
     }
     
@@ -330,17 +333,17 @@ impl Object {
         };
 
         Status::evaluate_uacpi_status(unsafe {
-            uacpi_sys::uacpi_object_assign_buffer(self.0, transmute(uacpi_slice))
+            uacpi_sys::uacpi_object_assign_buffer(self.0.as_ptr(), transmute(uacpi_slice))
         })
     }
 
     #[cfg(feature = "alloc")]
-    pub fn create_package(content: Box<Object>) -> Self {
+    pub fn create_package(content: Box<Object>) -> Option<Self> {
 
     }
 
     #[cfg(feature = "allocator_api")]
-    pub fn create_package_allocator<A>(content: Box<Object, A>) -> Self
+    pub fn create_package_in<A>(content: Box<Object, A>) -> Option<Self>
     where
         A: Allocator,
     {
@@ -365,12 +368,13 @@ impl Object {
     ) -> Result<(), UacpiError> {
     }
 
-    pub fn create_reference(&self) -> Object {}
+    pub fn create_reference(&self) -> Option<Object> {}
 
     pub fn assign_reference(&self, child: &Object) -> Result<(), UacpiError> {}
 
-    pub fn get_referenced_object(&self) -> Result<Object, UacpiError> {}
+    pub fn get_dereferenced_object(&self) -> Result<Option<Object>, UacpiError> {}
 
+    #[allow(unused_mut)]
     pub fn get_processor_info(&self) -> Result<ProcessorInfo, UacpiError> {
         let mut output = ProcessorInfo {
             id: 0,
@@ -381,12 +385,15 @@ impl Object {
 
         Status::evaluate_uacpi_status(unsafe {
             uacpi_sys::uacpi_object_get_processor_info(
-                self.0,
+                self.0.as_ptr(),
                 output_ptr as *mut uacpi_sys::uacpi_processor_info,
             )
         })?;
 
-        Ok(output)
+        //Ok(output)
+
+        compile_error!("WRONG")
+
     }
 
     #[allow(unused_mut)]
@@ -399,10 +406,12 @@ impl Object {
 
         Status::evaluate_uacpi_status(unsafe {
             uacpi_sys::uacpi_object_get_power_resource_info(
-                self.0,
+                self.0.as_ptr(),
                 output_ptr as *mut uacpi_sys::uacpi_power_resource_info,
             )
         })?;
+
+        compile_error!("WRONG");
 
         Ok(output)
     }
@@ -411,7 +420,7 @@ impl Object {
 impl Clone for Object {
     fn clone(&self) -> Self {
         unsafe {
-            uacpi_sys::uacpi_object_ref(self.0);
+            uacpi_sys::uacpi_object_ref(self.0.as_ptr());
         }
         Self(self.0)
     }
@@ -421,7 +430,7 @@ impl Clone for Object {
 impl Drop for Object {
     fn drop(&mut self) {
         unsafe {
-            uacpi_sys::uacpi_object_unref(self.0);
+            uacpi_sys::uacpi_object_unref(self.0.as_ptr());
         }
     }
 }
