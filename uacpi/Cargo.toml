@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bitfield-struct = "0.13.0"
 uacpi-sys = { path = "../uacpi-sys" }
 #log = { version = "0.4", optional = true }
 
