@@ -1,3 +1,7 @@
+#[cfg(feature = "aml_interpreter")]
+use core::{mem::ManuallyDrop, slice};
+
+#[cfg(feature = "aml_interpreter")]
 use core::{
     ffi::{c_char, c_void, CStr},
     mem::transmute, ptr::{null_mut, slice_from_raw_parts_mut, NonNull},
@@ -12,7 +16,7 @@ use alloc::boxed::Box;
 #[cfg(feature = "allocator_api")]
 use alloc::alloc::Allocator;
 
-
+#[cfg(feature = "aml_interpreter")]
 use crate::status::{Status, UacpiError};
 
 #[cfg(feature = "aml_interpreter")]
