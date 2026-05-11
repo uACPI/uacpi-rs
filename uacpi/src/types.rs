@@ -44,7 +44,7 @@ impl From<i32> for InitLevel {
 
 #[repr(i32)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum LogLevel {
+pub enum LogLevel {
     Debug = uacpi_sys::UACPI_LOG_DEBUG,
     Trace = uacpi_sys::UACPI_LOG_TRACE,
     Info = uacpi_sys::UACPI_LOG_INFO,
