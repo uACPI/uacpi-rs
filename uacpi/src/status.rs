@@ -66,7 +66,7 @@ impl Status {
 
 
 #[repr(i32)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum UacpiError {
     MappingFailed = uacpi_sys::UACPI_STATUS_MAPPING_FAILED,
     OutOfMemory = uacpi_sys::UACPI_STATUS_OUT_OF_MEMORY,
