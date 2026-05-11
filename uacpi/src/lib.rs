@@ -5,6 +5,7 @@
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 extern crate alloc;
 
+pub mod kernel_api;
 pub mod status;
 pub mod types;
 pub mod tables;
