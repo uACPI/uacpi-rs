@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 bitfield-struct = "0.13.0"
 uacpi-sys = { path = "../uacpi-sys" }
+either = { version = "1.15.0", default-features = false }
 #log = { version = "0.4", optional = true }
 
 [features]
@@ -14,7 +15,7 @@ default = ["allocator_api", "full_acpi_hardware"]
 #logging = ["log"]
 reduced-hardware-only = ["uacpi-sys/reduced-hardware"]
 tables-only = ["uacpi-sys/barebones-mode"]
-std = ["alloc"]
+std = ["alloc", "either/std"]
 allocator_api = ["alloc"]
 alloc = []
 aml_interpreter = []
