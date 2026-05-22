@@ -11,5 +11,5 @@ bindgen = "0.70.1"
 cc = "1.1.18"
 
 [features]
-reduced-hardware = []
-barebones-mode = []
+full-acpi-hardware = []
+aml-interpreter = [] #Without this feature uacpi is in barebones-mode

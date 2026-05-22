@@ -68,13 +68,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         cc.flag("-mno-red-zone");
     }
 
-    if cfg!(feature = "reduced-hardware") {
+    
+    if cfg!(not(feature = "full-acpi-hardware")) {
         cc.define("UACPI_REDUCED_HARDWARE", "1");
     }
-
-    if cfg!(feature = "barebones-mode") {
+    
+    
+    if cfg!(not(feature = "aml-interpreter")) {
         cc.define("UACPI_BAREBONES_MODE", "1");
     }
+ 
 
     cc.compile("uacpi");
 
@@ -85,8 +88,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             "-Iuacpi-src/include",
             "-DUACPI_SIZED_FREES=1",
             "-DUACPI_KERNEL_INITIALIZATION=1",
+            #[cfg(not(feature = "full-acpi-hardware"))]
             "-DUACPI_REDUCED_HARDWARE=1",
-            #[cfg(feature = "barebones-mode")]
+            #[cfg(not(feature = "aml-interpreter"))]
             "-DUACPI_BAREBONES_MODE=1",
             "-ffreestanding",
         ])
