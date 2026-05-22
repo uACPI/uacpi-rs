@@ -58,6 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     cc.files(sources)
         .include(format!("{uacpi_path_str}/include"))
         .define("UACPI_SIZED_FREES", "1")
+        .define("UACPI_KERNEL_INITIALIZATION", "1")
         .flag("-fno-stack-protector")
         .flag("-mgeneral-regs-only")
         .flag("-nostdlib")
@@ -83,7 +84,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .clang_args(&[
             "-Iuacpi-src/include",
             "-DUACPI_SIZED_FREES=1",
-            #[cfg(feature = "reduced-hardware")]
+            "-DUACPI_KERNEL_INITIALIZATION=1",
             "-DUACPI_REDUCED_HARDWARE=1",
             #[cfg(feature = "barebones-mode")]
             "-DUACPI_BAREBONES_MODE=1",
