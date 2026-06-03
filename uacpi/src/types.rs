@@ -71,6 +71,9 @@ pub type PhysAddr = u64;
 #[cfg(target_pointer_width = "64")]
 pub type IOAddr = u64;
 
+#[cfg(target_pointer_width = "32")]
+compile_error!("Open a Issue on Github, i didnt really expect anyone to use this on a 32bit platform");
+
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PCIAddress {
