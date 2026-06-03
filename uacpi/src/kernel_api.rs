@@ -25,7 +25,7 @@
 /// 
 /// 
 /// 
-#[cfg(feature = "tables-only")]
+#[cfg(not(feature = "full_acpi_hardware"))]
 #[macro_export]
 macro_rules! kernel_api {
     (
@@ -166,7 +166,7 @@ macro_rules! kernel_api {
 /// 
 /// 
 /// 
-#[cfg(not(feature = "tables-only"))]
+#[cfg(feature = "full_acpi_hardware")]
 #[macro_export]
 macro_rules! kernel_api {
     () => {
