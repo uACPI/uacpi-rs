@@ -30,7 +30,8 @@ Have three trait:
 
 */
 
-
+#[cfg(feature = "aml_interpreter")]
+compile_error!("AML Interpreter is not supported in this version");
 
 /// Returns the uACPI Version
 /// 

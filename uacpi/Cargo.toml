@@ -10,9 +10,9 @@ either = { version = "1.15.0", default-features = false }
 #log = { version = "0.4", optional = true }
 
 [features]
-default = ["allocator_api", "full_acpi_hardware"]
-#default = ["tables-only"]
-#logging = ["log"]
+#default = ["allocator_api", "full_acpi_hardware"]
+#default = ["full_acpi_hardware"]
+default = []
 std = ["alloc", "either/std"]
 allocator_api = ["alloc"]
 alloc = []
