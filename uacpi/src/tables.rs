@@ -1,5 +1,5 @@
 use core::{ffi::c_char, mem::MaybeUninit};
-use crate::{status::{Status, UacpiError}, tables::hpet::HPET};
+use crate::{status::{Status, UacpiError}, tables::{ecdt::ECDT, hpet::HPET}};
 use either::Either;
 
 #[cfg(feature = "alloc")]
@@ -13,6 +13,7 @@ use alloc::alloc::Allocator;
 //Add new Tables here
 pub mod template;
 pub mod hpet;
+pub mod ecdt;
 
 
 #[repr(C)]
@@ -262,6 +263,7 @@ use uacpi_sys::{uacpi_table_find_by_signature, uacpi_table_find_next_with_same_s
 
 
 pub enum AcpiTables {
-    HPET(HPET)
+    HPET(HPET),
+    ECDT(ECDT)
     //Add new Tables here
 }
