@@ -1,10 +1,10 @@
-#[cfg(feature = "aml_interpreter")]
-use core::{mem::ManuallyDrop, slice};
 
 #[cfg(feature = "aml_interpreter")]
 use core::{
     ffi::{c_char, c_void, CStr},
-    mem::transmute, ptr::{null_mut, slice_from_raw_parts_mut, NonNull},
+    mem::{transmute, ManuallyDrop}, 
+    ptr::{null_mut, slice_from_raw_parts_mut, NonNull},
+    slice
 };
 
 #[cfg(feature = "alloc")]
