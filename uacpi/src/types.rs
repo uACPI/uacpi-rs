@@ -15,6 +15,7 @@ use alloc::boxed::Box;
 
 #[cfg(feature = "allocator_api")]
 use alloc::alloc::Allocator;
+use bitfield_struct::bitfield;
 
 #[cfg(feature = "aml_interpreter")]
 use crate::status::{Status, UacpiError};
@@ -73,6 +74,235 @@ pub type IOAddr = u64;
 
 #[cfg(target_pointer_width = "32")]
 compile_error!("Open a Issue on Github, i didnt really expect anyone to use this on a 32bit platform");
+
+
+//Compacted Version
+#[repr(C, packed)]
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct GenericAddressStructureInternal {
+    address_space_id: u8,
+    register_bit_width: u8,
+    register_bit_offset: u8,
+    access_size: u8,
+    address: u64
+}
+
+impl From<GenericAddressStructure> for  GenericAddressStructureInternal {
+    fn from(value: GenericAddressStructure) -> Self {
+        
+        Self { 
+            address_space_id: match value.address_space {
+                AddressSpace::SystemMemory(_) => 0x00,
+                AddressSpace::SystemIO(_) => 0x01,
+                AddressSpace::PCIConfig(_) => 0x02,
+                AddressSpace::EmbeddedController(_) => 0x03,
+                AddressSpace::SMBus(_) => 0x04,
+                AddressSpace::SystemCmos(_) => 0x05,
+                AddressSpace::PCIBarTarget(_) => 0x06,
+                AddressSpace::IPMI(_) => 0x007,
+                AddressSpace::GeneralPurposeIO(_) => 0x08,
+                AddressSpace::GenericSerialBus(_) => 0x09,
+                AddressSpace::PCC(_) => 0x0A,
+                AddressSpace::PRM(_) => 0x0B,
+                AddressSpace::Reserved(id) => id,
+                AddressSpace::FFIXEDHW(_) => 0x7F,
+                AddressSpace::VendorSpecific(id) => id.0,
+            },
+            register_bit_width: value.register_bit_width,
+            register_bit_offset: value.register_bit_offset,
+            access_size: value.access_size as u8,
+            address: match value.address_space {
+                AddressSpace::SystemMemory(address) => address,
+                AddressSpace::SystemIO(address) => address,
+                AddressSpace::PCIConfig(pciconfig_space) => pciconfig_space.into(),
+                AddressSpace::EmbeddedController(address) => address,
+                AddressSpace::SMBus(address) => address,
+                AddressSpace::SystemCmos(address) => address,
+                AddressSpace::PCIBarTarget(pcibar_target) => pcibar_target.into(),
+                AddressSpace::IPMI(address) => address,
+                AddressSpace::GeneralPurposeIO(address) => address,
+                AddressSpace::GenericSerialBus(address) => address,
+                AddressSpace::PCC(address) => address,
+                AddressSpace::PRM(address) => address,
+                AddressSpace::Reserved(_) => 0,
+                AddressSpace::FFIXEDHW(address) => address,
+                AddressSpace::VendorSpecific(address) => address.1,
+            }    
+        }
+
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct GenericAddressStructure {
+    address_space: AddressSpace,
+    access_size: AccessSize,
+    register_bit_width: u8,
+    register_bit_offset: u8,
+}
+
+impl From<GenericAddressStructureInternal> for GenericAddressStructure {
+    fn from(value: GenericAddressStructureInternal) -> Self {
+        
+        Self { 
+            address_space: 
+            match value.address_space_id {
+                0x00 => AddressSpace::SystemMemory(value.address),
+                0x01 => AddressSpace::SystemIO(value.address),
+                0x02 => AddressSpace::PCIConfig(PCIConfigSpace(value.address)),
+                0x03 => AddressSpace::EmbeddedController(value.address),
+                0x04 => AddressSpace::SMBus(value.address),
+                0x05 => AddressSpace::SystemCmos(value.address),
+                0x06 => AddressSpace::PCIBarTarget(PCIBarTarget(value.address)),
+                0x07 => AddressSpace::IPMI(value.address),
+                0x08 => AddressSpace::GeneralPurposeIO(value.address),
+                0x09 => AddressSpace::GenericSerialBus(value.address),
+                0x0A => AddressSpace::PCC(value.address),
+                0x0B => AddressSpace::PRM(value.address),
+                0x0C ..= 0x7E => AddressSpace::Reserved(value.address_space_id),
+                0x7F => AddressSpace::FFIXEDHW(value.address),
+                0x80 ..= 0xFF => AddressSpace::VendorSpecific((value.address_space_id, value.address)),
+            },
+            access_size: value.access_size.into(),
+            register_bit_width: value.register_bit_width,
+            register_bit_offset: value.register_bit_offset 
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug)]
+pub enum AccessSize {
+    Undefined = 0,
+    Byte = 1,
+    Word = 2,
+    DWord = 3,
+    QWord = 4 
+}
+
+impl From<u8> for AccessSize {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => AccessSize::Undefined,
+            1 => AccessSize::Byte,
+            2 => AccessSize::Word,
+            3 => AccessSize::DWord,
+            4 => AccessSize::QWord,
+            _ => unreachable!("Invalid Value from uacpi"),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum AddressSpace {
+    SystemMemory(u64),
+    SystemIO(u64),
+    PCIConfig(PCIConfigSpace),
+    EmbeddedController(u64),
+    SMBus(u64),
+    SystemCmos(u64),
+    PCIBarTarget(PCIBarTarget),
+    IPMI(u64),
+    GeneralPurposeIO(u64),
+    GenericSerialBus(u64),
+    PCC(u64),
+    PRM(u64),
+    Reserved(u8), //0x0C ..= 0x7E
+    FFIXEDHW(u64),
+    VendorSpecific((u8, u64)), //0x80 ..= 0xFF
+}
+
+/*
+impl From<u8> for AddressSpace {
+    fn from(value: u8) -> Self {
+        match value {
+            0x00 => AddressSpace::SystemMemory,
+            0x01 => AddressSpace::SystemIO,
+            0x02 => AddressSpace::PCIConfig,
+            0x03 => AddressSpace::EmbeddedController,
+            0x04 => AddressSpace::SMBus,
+            0x05 => AddressSpace::SystemCmos,
+            0x06 => AddressSpace::PCIBarTarget,
+            0x07 => AddressSpace::IPMI,
+            0x08 => AddressSpace::GeneralPurposeIO,
+            0x09 => AddressSpace::GenericSerialBus,
+            0x0A => AddressSpace::PCC,
+            0x0B => AddressSpace::PRM,
+            0x0C ..= 0x7E => AddressSpace::Reserved(value),
+            0x7F => AddressSpace::FFIXEDHW,
+            0x80 ..= 0xFF => AddressSpace::VendorSpecific(value),
+        }
+    }
+}
+
+impl TryFrom<i32> for AddressSpace {
+    type Error = ();
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        if value > u8::MAX.into() { 
+            Err(()) 
+        } else {
+            let value_u8 = value as u8;
+            Ok(value_u8.into())
+        }
+
+    }
+}
+
+impl Into<u8> for AddressSpace {
+    fn into(self) -> u8 {
+        AddressSpace as u8
+    }
+}
+*/
+impl AddressSpace {
+    pub fn as_str(&self) -> &str {
+        match self {
+            AddressSpace::SystemMemory(_) => "SystemMemory",
+            AddressSpace::SystemIO(_) => "SystemIO",
+            AddressSpace::PCIConfig(_) => "PCI_Config",
+            AddressSpace::EmbeddedController(_) => "EmbeddedControl",
+            AddressSpace::SMBus(_) => "SMBus",
+            AddressSpace::SystemCmos(_) => "SystemCMOS",
+            AddressSpace::PCIBarTarget(_) => "PciBarTarget",
+            AddressSpace::IPMI(_) => "IPMI",
+            AddressSpace::GeneralPurposeIO(_) => "GeneralPurposeIO",
+            AddressSpace::GenericSerialBus(_) => "GenericSerialBus",
+            AddressSpace::PCC(_) => "PCC",
+            AddressSpace::PRM(_) => "PRM",
+            AddressSpace::Reserved(_) => "<reserved>",
+            AddressSpace::FFIXEDHW(_) => "FFixedHW",
+            AddressSpace::VendorSpecific(_) => "<vendor specific>",
+        }
+    }
+}
+
+
+#[bitfield(u64)]
+pub struct PCIConfigSpace {
+    offset: u16,
+    function: u16,
+    device: u16,
+    __: u16,
+}
+
+
+#[bitfield(u64)]
+pub struct PCIBarTarget {
+    #[bits(37)]
+    offset: u64,
+    #[bits(3)]
+    bar_index: u8,
+    #[bits(3)]
+    function: u8,
+    #[bits(5)]
+    device: u8,
+    #[bits(8)]
+    bus: u8,
+    #[bits(8)]
+    segment: u8,
+}
+
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -648,66 +878,7 @@ pub(crate) type NotifyHandlerInternal = fn(
     value: u64,
 ) -> Result<(), UacpiError>;
 
-#[repr(i32)]
-pub enum AddressSpace {
-    SystemMemory = uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_MEMORY,
-    SystemIO = uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_IO,
-    PCIConfig = uacpi_sys::UACPI_ADDRESS_SPACE_PCI_CONFIG,
-    EmbeddedController = uacpi_sys::UACPI_ADDRESS_SPACE_EMBEDDED_CONTROLLER,
-    SMBus = uacpi_sys::UACPI_ADDRESS_SPACE_SMBUS,
-    SystemCmos = uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_CMOS,
-    PCIBarTarget = uacpi_sys::UACPI_ADDRESS_SPACE_PCI_BAR_TARGET,
-    IPMI = uacpi_sys::UACPI_ADDRESS_SPACE_IPMI,
-    GeneralPurposeIO = uacpi_sys::UACPI_ADDRESS_SPACE_GENERAL_PURPOSE_IO,
-    GenericSerialBus = uacpi_sys::UACPI_ADDRESS_SPACE_GENERIC_SERIAL_BUS,
-    PCC = uacpi_sys::UACPI_ADDRESS_SPACE_PCC,
-    PRM = uacpi_sys::UACPI_ADDRESS_SPACE_PRM,
-    FFIXEDHW = uacpi_sys::UACPI_ADDRESS_SPACE_FFIXEDHW,
-    VendorSpecific(i32),
-}
 
-impl From<i32> for AddressSpace {
-    fn from(value: i32) -> Self {
-        match value {
-            uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_MEMORY => AddressSpace::SystemMemory,
-            uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_IO => AddressSpace::SystemIO,
-            uacpi_sys::UACPI_ADDRESS_SPACE_PCI_CONFIG => AddressSpace::PCIConfig,
-            uacpi_sys::UACPI_ADDRESS_SPACE_EMBEDDED_CONTROLLER => AddressSpace::EmbeddedController,
-            uacpi_sys::UACPI_ADDRESS_SPACE_SMBUS => AddressSpace::SMBus,
-            uacpi_sys::UACPI_ADDRESS_SPACE_SYSTEM_CMOS => AddressSpace::SystemCmos,
-            uacpi_sys::UACPI_ADDRESS_SPACE_PCI_BAR_TARGET => AddressSpace::PCIBarTarget,
-            uacpi_sys::UACPI_ADDRESS_SPACE_IPMI => AddressSpace::IPMI,
-            uacpi_sys::UACPI_ADDRESS_SPACE_GENERAL_PURPOSE_IO => AddressSpace::GeneralPurposeIO,
-            uacpi_sys::UACPI_ADDRESS_SPACE_GENERIC_SERIAL_BUS => AddressSpace::GenericSerialBus,
-            uacpi_sys::UACPI_ADDRESS_SPACE_PCC => AddressSpace::PCC,
-            uacpi_sys::UACPI_ADDRESS_SPACE_PRM => AddressSpace::PRM,
-            uacpi_sys::UACPI_ADDRESS_SPACE_FFIXEDHW => AddressSpace::FFIXEDHW,
-            uacpi_sys::UACPI_ADDRESS_SPACE_TABLE_DATA => unreachable!("Internal data type leaked!"),
-            _ => AddressSpace::VendorSpecific(value),
-        }
-    }
-}
-
-impl AddressSpace {
-    pub fn as_str(&self) -> &str {
-        match self {
-            AddressSpace::SystemMemory => "SystemMemory",
-            AddressSpace::SystemIO => "SystemIO",
-            AddressSpace::PCIConfig => "PCI_Config",
-            AddressSpace::EmbeddedController => "EmbeddedControl",
-            AddressSpace::SMBus => "SMBus",
-            AddressSpace::SystemCmos => "SystemCMOS",
-            AddressSpace::PCIBarTarget => "PciBarTarget",
-            AddressSpace::IPMI => "IPMI",
-            AddressSpace::GeneralPurposeIO => "GeneralPurposeIO",
-            AddressSpace::GenericSerialBus => "GenericSerialBus",
-            AddressSpace::PCC => "PCC",
-            AddressSpace::PRM => "PRM",
-            AddressSpace::FFIXEDHW => "FFixedHW",
-            AddressSpace::VendorSpecific(_) => "<vendor specific>",
-        }
-    }
-}
 
 #[cfg(feature = "aml_interpreter")]
 #[repr(i32)]
