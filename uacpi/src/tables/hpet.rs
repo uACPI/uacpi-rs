@@ -1,7 +1,7 @@
 
 use bitfield_struct::bitfield;
 
-use crate::tables::{AcpiHeader, AcpiTable, AcpiTableInternal, AcpiTableSignature, AcpiTableStruct, AcpiTableMulti};
+use crate::{tables::{AcpiHeader, AcpiTable, AcpiTableInternal, AcpiTableMulti, AcpiTableSignature, AcpiTableStruct}, types::{GenericAddressStructure, GenericAddressStructureInternal}};
 
 use core::{ffi::c_char, ptr::addr_of};
 
@@ -83,8 +83,10 @@ impl HPET {
     }
 
 
-    pub fn get_base_address(&self) -> u32 {
-        todo!("Add GAS")
+    pub fn get_base_address(&self) -> GenericAddressStructure {
+        
+        unsafe { (*(self.internal_start_of_data() as *mut HpetInternal)).base_address_gas }.into()
+
     }
 
 
@@ -137,7 +139,7 @@ impl HPET {
 #[repr(C, packed)]
 struct HpetInternal {
     event_timer_block_id: EventTimerBlockID,
-    base_address_gas: [u8;12], //todo: add GAS
+    base_address_gas: GenericAddressStructureInternal, //todo: add GAS
     hpet_number: u8,
     main_counter_minimum_clock_tick: u16,
     page_protection_and_oem_attribute: PageProtectionAndOEMAttribute
