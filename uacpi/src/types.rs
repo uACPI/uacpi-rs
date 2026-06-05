@@ -304,6 +304,7 @@ pub struct PCIBarTarget {
 }
 
 
+#[cfg(feature = "aml_interpreter")]
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PCIAddress {
