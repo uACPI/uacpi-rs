@@ -415,6 +415,7 @@ impl From<ObjectType> for ObjectTypeBits {
 }
 
 #[cfg(feature = "aml_interpreter")]
+#[repr(C)]
 pub struct Object(pub(crate) NonNull<uacpi_sys::uacpi_object>);
 
 #[cfg(feature = "aml_interpreter")]
