@@ -70,7 +70,17 @@ trait AcpiTableInternal {
 //Used for special tables which have only one instance gurranteed by the spec (FACT,..)
 pub trait AcpiTableSingle: AcpiTable {
 
-    fn get() -> Result<Self, UacpiError> where Self: Sized;
+    fn get() -> Result<Self, UacpiError> where Self: Sized {
+
+        let mut table: MaybeUninit<AcpiTableStruct> = MaybeUninit::uninit();
+
+        Status::evaluate_uacpi_status(unsafe {
+            uacpi_table_find_by_signature(&Self::TABLE_SIGNATURE as *const c_char, table.as_mut_ptr() as *mut u8 as *mut uacpi_sys::uacpi_table)
+        })?;
+
+        Ok(Self::internal_acpi_table_to_self(unsafe { table.assume_init() }))
+
+    }
 
 }
 
