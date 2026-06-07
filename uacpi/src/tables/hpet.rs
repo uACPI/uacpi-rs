@@ -1,7 +1,7 @@
 
 use bitfield_struct::bitfield;
 
-use crate::{tables::{AcpiHeader, AcpiTable, AcpiTableInternal, AcpiTableMulti, AcpiTableSignature, AcpiTableStruct}, types::{GenericAddressStructure, GenericAddressStructureInternal}};
+use crate::{tables::{AcpiHeader, AcpiTable, AcpiTableInternal, AcpiTableMulti, AcpiTableSignature, AcpiTableStruct}, types::{GenericAddressStructure, GenericAddressStructurePacked}};
 
 use core::{ffi::c_char, ptr::addr_of};
 
@@ -139,7 +139,7 @@ impl HPET {
 #[repr(C, packed)]
 struct HpetInternal {
     event_timer_block_id: EventTimerBlockID,
-    base_address_gas: GenericAddressStructureInternal, //todo: add GAS
+    base_address_gas: GenericAddressStructurePacked, //todo: add GAS
     hpet_number: u8,
     main_counter_minimum_clock_tick: u16,
     page_protection_and_oem_attribute: PageProtectionAndOEMAttribute

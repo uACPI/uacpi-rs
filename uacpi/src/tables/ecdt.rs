@@ -1,5 +1,5 @@
 use core::{ffi::{CStr, c_char}};
-use crate::{tables::{AcpiHeader, AcpiTable, AcpiTableInternal, AcpiTableSignature, AcpiTableSingle, AcpiTableStruct}, types::{GenericAddressStructure, GenericAddressStructureInternal}};
+use crate::{tables::{AcpiHeader, AcpiTable, AcpiTableInternal, AcpiTableSignature, AcpiTableSingle, AcpiTableStruct}, types::{GenericAddressStructure, GenericAddressStructurePacked}};
 
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -80,8 +80,8 @@ impl ECDT {
 
 #[repr(C, packed)]
 struct ECDTInternal {
-    ec_control: GenericAddressStructureInternal,
-    ec_data: GenericAddressStructureInternal,
+    ec_control: GenericAddressStructurePacked,
+    ec_data: GenericAddressStructurePacked,
     uid: u32,
     gpe_bit: u8,
     ec_id: [c_char; 0],

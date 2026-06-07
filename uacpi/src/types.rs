@@ -79,7 +79,7 @@ compile_error!("Open a Issue on Github, i didnt really expect anyone to use this
 //Compacted Version
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct GenericAddressStructureInternal {
+pub(crate) struct GenericAddressStructurePacked {
     address_space_id: u8,
     register_bit_width: u8,
     register_bit_offset: u8,
@@ -87,7 +87,7 @@ pub(crate) struct GenericAddressStructureInternal {
     address: u64
 }
 
-impl From<GenericAddressStructure> for  GenericAddressStructureInternal {
+impl From<GenericAddressStructure> for  GenericAddressStructurePacked {
     fn from(value: GenericAddressStructure) -> Self {
         
         Self { 
@@ -141,8 +141,8 @@ pub struct GenericAddressStructure {
     register_bit_offset: u8,
 }
 
-impl From<GenericAddressStructureInternal> for GenericAddressStructure {
-    fn from(value: GenericAddressStructureInternal) -> Self {
+impl From<GenericAddressStructurePacked> for GenericAddressStructure {
+    fn from(value: GenericAddressStructurePacked) -> Self {
         
         Self { 
             address_space: 
