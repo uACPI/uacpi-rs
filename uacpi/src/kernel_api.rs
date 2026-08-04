@@ -3,6 +3,25 @@
 //For some reason bindgen cant import UACPI_MAP_FAILED so here is it manually :/
 pub const MAP_FAILED: usize = usize::MAX;
 
+/// # FUNCTION SIGNATURES
+/// 
+/// To leave a api function unimplemented use ()
+/// 
+/// kernel_api!(
+///     kernel_get_rsdp = ()
+/// )
+/// 
+/// ## Expected Function Signatures:
+/// 
+/// kernel_get_rsdp => fn(out: PhysAddr) -> UacpiError
+/// 
+/// kernel_map      => fn(addr: PhysAddr, len: usize) -> Option<*mut u8> //Return 'None' if mapping failed
+/// 
+/// kernel_unmap    => fn(addr: PhysAddr, len: usize)
+/// 
+/// kernel_log      => fn(level: LogLevel, message: &'a str)
+/// 
+/// 
 /// # IMPLEMENTATION NOTE
 /// 
 /// ## kernel_map/kernel_unmap
@@ -25,7 +44,6 @@ pub const MAP_FAILED: usize = usize::MAX;
 ///          5. Add the original offset within page 0xABC (from step 1) to the
 ///             resulting virtual address 0xF000 + 0xABC => 0xFABC. Return it
 ///             to uACPI.
-/// 
 /// 
 /// 
 #[cfg(not(feature = "full_acpi_hardware"))]
