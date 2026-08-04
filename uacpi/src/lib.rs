@@ -2,7 +2,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 
-use core::ffi::c_void;
+use core::{ffi::c_void, mem::MaybeUninit};
 
 use crate::status::{Status, UacpiError};
 
@@ -51,6 +51,30 @@ pub unsafe fn setup_early_table_access(temp_buffer: &mut[u8]) -> Result<(), Uacp
     Status::evaluate_uacpi_status(unsafe {
         uacpi_sys::uacpi_setup_early_table_access(temp_buffer.as_mut_ptr() as *mut c_void, temp_buffer.len())
     })
+
+}
+
+pub fn table_subsystem_available() -> bool {
+
+    unsafe {
+        uacpi_sys::uacpi_table_subsystem_available()
+    }
+
+}
+
+
+pub fn is_reduced_hardware() -> Result<bool, UacpiError> {
+
+    let mut output: MaybeUninit<bool> = MaybeUninit::uninit();
+
+    Status::evaluate_uacpi_status(unsafe {
+        uacpi_sys::uacpi_is_platform_reduced_hardware( output.as_mut_ptr() )
+    })?;
+
+
+    Ok(
+        unsafe { output.assume_init() }
+    )
 
 }
 
