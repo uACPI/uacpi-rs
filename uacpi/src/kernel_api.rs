@@ -7,19 +7,21 @@ pub const MAP_FAILED: usize = usize::MAX;
 /// 
 /// To leave a api function unimplemented use ()
 /// 
-/// kernel_api!(
-///     kernel_get_rsdp = ()
-/// )
-/// 
+/// kernel_api!{
+/// kernel_get_rsdp = (),
+/// kernel_map = (),
+/// kernel_unmap = (),
+/// kernel_log = (),
+/// }
 /// ## Expected Function Signatures:
 /// 
-/// kernel_get_rsdp => fn(out: PhysAddr) -> UacpiError
+/// kernel_get_rsdp => fn(out: *const PhysAddr) -> UacpiError
 /// 
 /// kernel_map      => fn(addr: PhysAddr, len: usize) -> Option<*mut u8> //Return 'None' if mapping failed
 /// 
 /// kernel_unmap    => fn(addr: PhysAddr, len: usize)
 /// 
-/// kernel_log      => fn(level: LogLevel, message: &'a str)
+/// kernel_log      => fn<'a>(level: LogLevel, message: &'a str)
 /// 
 /// 
 /// # IMPLEMENTATION NOTE
@@ -64,8 +66,8 @@ macro_rules! kernel_api {
     (@get_rsdp ()) => {
 
         #[unsafe(no_mangle)]
-        pub extern "C" fn uacpi_kernel_get_rsdp(out: *$crate::types::PhysAddr) -> i32 {
-            $crate::status::UacpiError::Unimplemented
+        pub extern "C" fn uacpi_kernel_get_rsdp(out: *const $crate::types::PhysAddr) -> i32 {
+            $crate::status::UacpiError::Unimplemented as i32
         }
 
     };
@@ -73,11 +75,11 @@ macro_rules! kernel_api {
     (@get_rsdp $f:expr) => {
 
         #[unsafe(no_mangle)]
-        pub extern "C" fn uacpi_kernel_get_rsdp(out: *$crate::types::PhysAddr) -> i32 {
+        pub extern "C" fn uacpi_kernel_get_rsdp(out: *const $crate::types::PhysAddr) -> i32 {
             
-            let f: fn(out: *$crate::types::PhysAddr) -> $crate::status::UacpiError = $f;
+            let f: fn(out: *const $crate::types::PhysAddr) -> $crate::status::UacpiError = $f;
 
-            f(out).into()
+            f(out) as i32
 
         }
 
@@ -87,7 +89,7 @@ macro_rules! kernel_api {
     (@map ()) => {
         
         #[unsafe(no_mangle)]
-        pub extern "C" uacpi_kernel_map(addr: $crate::types::PhysAddr, len: usize) -> *mut u8 {
+        pub extern "C" fn uacpi_kernel_map(addr: $crate::types::PhysAddr, len: usize) -> *mut u8 {
             core::ptr::null_mut()
         }
 
@@ -96,7 +98,7 @@ macro_rules! kernel_api {
     (@map $f:expr) => {
         
         #[unsafe(no_mangle)]
-        pub extern "C" uacpi_kernel_map(addr: $crate::types::PhysAddr, len: usize) -> *mut u8 {
+        pub extern "C" fn uacpi_kernel_map(addr: $crate::types::PhysAddr, len: usize) -> *mut u8 {
             
             let f: fn(addr: $crate::types::PhysAddr, len: usize) -> Option<*mut u8> = $f;
 
@@ -117,7 +119,7 @@ macro_rules! kernel_api {
     (@unmap ()) => {
 
         #[unsafe(no_mangle)]
-        pub extern "C" uacpi_kernel_unmap(addr: *mut u8, len: usize) {
+        pub extern "C" fn uacpi_kernel_unmap(addr: *mut u8, len: usize) {
             //Do nothing
         }
 
@@ -126,11 +128,11 @@ macro_rules! kernel_api {
     (@unmap $f:expr) => {
 
         #[unsafe(no_mangle)]
-        pub extern "C" uacpi_kernel_unmap(addr: *mut u8, len: usize) {
+        pub extern "C" fn uacpi_kernel_unmap(addr: *mut u8, len: usize) {
             
             let f: fn(addr: $crate::types::PhysAddr, len: usize) = $f;
 
-            f(addr, len)
+            f(addr as u64, len)
 
         }
     
@@ -149,13 +151,13 @@ macro_rules! kernel_api {
     (@log $f:expr) => {
 
         #[unsafe(no_mangle)]
-        pub extern "C" fn uacpi_kernel_log(level: i32, log_message: *const core::ffi::c_char) {
+        pub unsafe extern "C" fn uacpi_kernel_log(level: i32, log_message: *const core::ffi::c_char) {
             
-            let f: fn(level: $crate::types::LogLevel, message: &'a str) = $f;
+            let f: fn(level: $crate::types::LogLevel, message: &str) = $f;
 
             f(
                 $crate::types::LogLevel::from(level),
-                unsafe { core::ffi::CStr::from_ptr(char_ptr) }.to_str().unwrap()
+                unsafe { core::ffi::CStr::from_ptr(log_message) }.to_str().unwrap()
             );
 
         }
