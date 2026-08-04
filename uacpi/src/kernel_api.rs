@@ -1,5 +1,8 @@
 
 
+//For some reason bindgen cant import UACPI_MAP_FAILED so here is it manually :/
+pub const MAP_FAILED: usize = usize::MAX;
+
 /// # IMPLEMENTATION NOTE
 /// 
 /// ## kernel_map/kernel_unmap
@@ -77,9 +80,16 @@ macro_rules! kernel_api {
         #[unsafe(no_mangle)]
         pub extern "C" uacpi_kernel_map(addr: $crate::types::PhysAddr, len: usize) -> *mut u8 {
             
-            let f: fn(addr: $crate::types::PhysAddr, len: usize) -> *mut u8 = $f;
+            let f: fn(addr: $crate::types::PhysAddr, len: usize) -> Option<*mut u8> = $f;
 
-            f(addr, len)
+            match f(addr, len) {
+                Some(value) => {
+                    return value;
+                }
+                None => {
+                    return  $crate::kernel_api::MAP_FAILED as *mut u8;
+                }
+            }
 
         }
 
