@@ -14,6 +14,7 @@ use alloc::alloc::Allocator;
 pub mod template;
 pub mod hpet;
 pub mod ecdt;
+pub mod dbgp;
 
 
 #[repr(C)]
@@ -264,6 +265,7 @@ use uacpi_sys::{uacpi_table_find_by_signature, uacpi_table_find_next_with_same_s
 
 pub enum AcpiTables {
     HPET(HPET),
-    ECDT(ECDT)
+    ECDT(ECDT),
+    DBGP(DBGP),
     //Add new Tables here
 }
