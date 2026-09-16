@@ -17,7 +17,7 @@ pub mod ecdt;
 pub mod dbgp;
 
 
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AcpiHeader {
     signature: [c_char;4],
